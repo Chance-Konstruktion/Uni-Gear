@@ -1,5 +1,7 @@
 # Uni-Gear – Parametric Gear Generator
 
+*In anderer Sprache lesen: **Deutsch** · [English](README_EN.md)*
+
 **Ein schlankes Blender-Add-on zur schnellen Erstellung parametrischer Zahnräder**
 
 Erstelle realistische Zahnräder mit nur wenigen Klicks direkt im N-Panel.  
