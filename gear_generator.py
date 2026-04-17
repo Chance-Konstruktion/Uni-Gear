@@ -5,10 +5,10 @@ import math
 bl_info = {
     "name": "Parametric Evolvent Gear Generator",
     "author": "Du + KI-Assistent",
-    "version": (5, 0, 0),
+    "version": (6, 0, 0),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Erstellen",
-    "description": "Evolventenzahnrad mit optionaler Schraegverzahnung und Bohrungen.",
+    "description": "Evolventenzahnrad mit Schraegverzahnung, Nabe, Stacking und Kegelverzahnung.",
     "category": "Add Mesh",
 }
 
@@ -433,6 +433,151 @@ def create_gear_mesh(
 
 
 # ================================================================
+# KEGELRAD (Bevel Gear) — gerad- und spiralverzahnt
+# ================================================================
+#
+# Geometrie-Grundlagen (Tredgold-Naeherung):
+#   - Teilkegelwinkel  delta  (halber Oeffnungswinkel des Teilkegels)
+#   - Aussenteilkreisradius R_o  (am "Rueckkegel", also am grossen Ende)
+#   - Kegellaenge A_o = R_o / sin(delta)
+#   - Zahnbreite  F  liegt entlang der Mantellinie
+#   - An Mantelposition s in [0, F]:
+#         Skalierung = 1 - s / A_o
+#         Teilkreisradius lokal = R_o * Skalierung
+#         axiale Hoehe z(s)  = -s * cos(delta)  (Richtung Kegelspitze)
+#
+# Das 2D-Evolventenprofil wird einmal am grossen Ende berechnet und pro
+# Schicht linear auf die lokale Groesse skaliert — das entspricht der
+# klassischen Tredgold-Approximation und ist optisch/funktional ausreichend.
+#
+# Fuer Spiralverzahnung wird jede Schicht zusaetzlich um einen Winkel phi(s)
+# tangential verdreht: phi(s) = s * tan(beta) / r_mean, wobei beta der
+# mittlere Spiralwinkel und r_mean der Teilkreisradius auf halber Zahnbreite
+# ist. Das erzeugt einen gleichmaessigen, leicht konischen Schraubverlauf.
+
+
+def _compute_bevel_layers(face_width, spiral_angle_rad):
+    """Anzahl axialer Schichten fuer die Kegelradmantelung."""
+    if face_width <= 0.0:
+        return 1
+    base = 16
+    if abs(spiral_angle_rad) > 1e-9:
+        base = max(base, int(math.degrees(abs(spiral_angle_rad)) / 2.0) + 16)
+    return min(base, 128)
+
+
+def create_bevel_gear_mesh(
+    pitch_radius,
+    teeth,
+    face_width,
+    pressure_angle_deg,
+    cone_angle_deg,
+    spiral_angle_deg=0.0,
+    bore_radius=0.0,
+    z_offset=0.0,
+):
+    """Erstellt ein Kegelrad (Bevel Gear) — gerad- oder spiralverzahnt.
+
+    pitch_radius:        Teilkreisradius am grossen Ende (Rueckkegel).
+    teeth:               Zaehnezahl.
+    face_width:          Zahnbreite entlang der Mantellinie.
+    pressure_angle_deg:  Eingriffswinkel (Druckwinkel).
+    cone_angle_deg:      Teilkegelwinkel delta in Grad (45 = Miter-Paar 1:1).
+    spiral_angle_deg:    Mittlerer Spiralwinkel. 0 = Geradverzahnung.
+    bore_radius:         Optionale zentrale Bohrung durch den gesamten Kegel.
+    z_offset:            Verschiebung entlang Z (z.B. fuer Kombinationen).
+    """
+    if teeth < 4:
+        raise ValueError("Zaehnezahl muss >= 4 sein.")
+    if face_width <= 0.0:
+        raise ValueError("Zahnbreite muss > 0 sein.")
+
+    cone_angle   = math.radians(cone_angle_deg)
+    spiral_angle = math.radians(spiral_angle_deg)
+    sin_d        = math.sin(cone_angle)
+    cos_d        = math.cos(cone_angle)
+    if sin_d < 1e-4:
+        raise ValueError("Teilkegelwinkel zu klein.")
+
+    cone_apex_dist = pitch_radius / sin_d
+    if face_width >= cone_apex_dist * 0.95:
+        raise ValueError("Zahnbreite zu gross fuer diesen Teilkegelwinkel.")
+
+    profile_2d, root_radius, _tip_radius = build_gear_profile(
+        pitch_radius=pitch_radius, teeth=teeth, pressure_angle_deg=pressure_angle_deg,
+    )
+
+    has_bore = bore_radius > 0.0
+    if has_bore:
+        inner_scale = 1.0 - face_width / cone_apex_dist
+        if bore_radius >= root_radius * inner_scale * 0.95:
+            raise ValueError("Bohrungsradius zu gross fuer das apex-nahe Ende des Kegelrads.")
+
+    layers = _compute_bevel_layers(face_width, spiral_angle)
+
+    r_back  = pitch_radius
+    r_front = pitch_radius * (1.0 - face_width / cone_apex_dist)
+    r_mean  = 0.5 * (r_back + r_front)
+    tan_sp  = math.tan(spiral_angle)
+
+    mesh = bpy.data.meshes.new("Kegelrad")
+    obj  = bpy.data.objects.new("Kegelrad", mesh)
+    bpy.context.collection.objects.link(obj)
+    bm   = bmesh.new()
+
+    slices = []
+    for k in range(layers + 1):
+        s     = face_width * k / layers
+        scale = 1.0 - s / cone_apex_dist
+        z     = -s * cos_d
+        phi   = s * tan_sp / r_mean
+        cos_p = math.cos(phi)
+        sin_p = math.sin(phi)
+        slices.append([
+            bm.verts.new((
+                (x * scale) * cos_p - (y * scale) * sin_p,
+                (x * scale) * sin_p + (y * scale) * cos_p,
+                z,
+            ))
+            for (x, y) in profile_2d
+        ])
+
+    for k in range(layers):
+        _bridge_rings(bm, slices[k], slices[k + 1])
+
+    # Zentrische Bohrung durch den gesamten Kegel (zylindrisch).
+    bore_back = bore_front = None
+    if has_bore:
+        bore_segs  = max(32, int(2.0 * math.pi * bore_radius / (0.005 * pitch_radius)) + 16)
+        z_back     = 0.0
+        z_front    = -face_width * cos_d
+        bore_back  = _add_circle_layer(bm, 0.0, 0.0, z_back,  bore_radius, bore_segs)
+        bore_front = _add_circle_layer(bm, 0.0, 0.0, z_front, bore_radius, bore_segs)
+        # Umgekehrte Wicklung, damit Normalen nach innen zeigen (Bohrungsinnenwand).
+        _bridge_rings(bm, bore_front, bore_back, reverse_winding=True)
+
+    def _fill_cap(outer_loop, inner_ring):
+        loops = [outer_loop]
+        if inner_ring is not None:
+            loops.append(inner_ring)
+        bmesh.ops.triangle_fill(bm, edges=_collect_loop_edges(bm, loops), use_beauty=True)
+
+    _fill_cap(slices[0],  bore_back)    # Grosses Ende (z = 0)
+    _fill_cap(slices[-1], bore_front)   # Apex-Ende    (z < 0)
+
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+
+    if z_offset != 0.0:
+        bmesh.ops.translate(bm, vec=(0.0, 0.0, z_offset), verts=bm.verts[:])
+
+    bm.to_mesh(mesh)
+    bm.free()
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    return obj
+
+
+# ================================================================
 # PROPERTIES (PropertyGroup -> umgeht 'readonly state' Fehler)
 # ================================================================
 
@@ -508,6 +653,34 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         default=0.01, min=0.0001, max=1.0, unit="LENGTH",
     )
 
+    # --- Kegelverzahnung (Bevel Gear) ---
+    use_bevel: bpy.props.BoolProperty(
+        name="Kegelverzahnung",
+        description="Kegelrad statt Stirnrad erzeugen (deaktiviert Schraegverzahnung, Nabe, "
+                    "dezentrale Bohrungen und Stacking)",
+        default=False,
+    )
+    bevel_cone_angle: bpy.props.FloatProperty(
+        name="Teilkegelwinkel",
+        description="Halber Oeffnungswinkel des Teilkegels (delta). 45 = Miter-Paar 1:1",
+        default=45.0, min=5.0, max=85.0,
+    )
+    bevel_face_width: bpy.props.FloatProperty(
+        name="Zahnbreite",
+        description="Laenge des Zahnes entlang der Kegelmantellinie",
+        default=0.008, min=0.0001, max=1.0, unit="LENGTH",
+    )
+    use_spiral_bevel: bpy.props.BoolProperty(
+        name="Spiralverzahnung",
+        description="Spiralverzahnter Kegelrad (Spiral Bevel) statt Geradverzahnung",
+        default=False,
+    )
+    spiral_angle: bpy.props.FloatProperty(
+        name="Spiralwinkel",
+        description="Mittlerer Spiralwinkel in Grad (typ. 20-45)",
+        default=35.0, min=-60.0, max=60.0,
+    )
+
     # --- Stacking (Stufenrad) ---
     use_stack: bpy.props.BoolProperty(
         name="Stufenrad (Stacking)",
@@ -551,6 +724,27 @@ class MESH_OT_create_gear(bpy.types.Operator):
 
     def execute(self, context):
         props = context.scene.gear_generator
+
+        # Kegelrad-Pfad: separater Builder, ignoriert inkompatible Optionen.
+        if props.use_bevel:
+            spiral_deg = props.spiral_angle if props.use_spiral_bevel else 0.0
+            bore_r_b   = props.bore_radius  if props.use_bore         else 0.0
+            try:
+                create_bevel_gear_mesh(
+                    pitch_radius=props.radius,
+                    teeth=props.teeth,
+                    face_width=props.bevel_face_width,
+                    pressure_angle_deg=props.pressure_angle,
+                    cone_angle_deg=props.bevel_cone_angle,
+                    spiral_angle_deg=spiral_deg,
+                    bore_radius=bore_r_b,
+                )
+            except Exception as exc:
+                self.report({"ERROR"}, f"Kegelrad: {exc}")
+                return {"CANCELLED"}
+            kind = "Spiralkegelrad" if props.use_spiral_bevel else "Kegelrad"
+            self.report({"INFO"}, f"{kind} {props.teeth}Z erstellt.")
+            return {"FINISHED"}
 
         helix_deg = props.helix_angle if props.use_helical else 0.0
         bore_r    = props.bore_radius if props.use_bore  else 0.0
@@ -648,23 +842,41 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         box.prop(props, "thickness")
         box.prop(props, "pressure_angle")
 
+        # Kegelverzahnung (Bevel) — schliesst Schraegverzahnung/Nabe/Stacking aus
+        box = layout.box()
+        box.prop(props, "use_bevel", icon="CONE")
+        col = box.column()
+        col.enabled = props.use_bevel
+        col.prop(props, "bevel_cone_angle")
+        col.prop(props, "bevel_face_width")
+        col.prop(props, "use_spiral_bevel", icon="FORCE_MAGNETIC")
+        sub = col.column()
+        sub.enabled = props.use_bevel and props.use_spiral_bevel
+        sub.prop(props, "spiral_angle")
+
+        # Im Kegelrad-Modus haben Helical / Nabe / Stacking / dezentrale Bohrungen
+        # keine Bedeutung; wir deaktivieren die entsprechenden UI-Abschnitte.
+        cylindrical_enabled = not props.use_bevel
+
         # Schraegverzahnung
         box = layout.box()
+        box.enabled = cylindrical_enabled
         box.prop(props, "use_helical", icon="MOD_SCREW")
         col = box.column()
-        col.enabled = props.use_helical
+        col.enabled = cylindrical_enabled and props.use_helical
         col.prop(props, "helix_angle")
 
         # Nabe
         box = layout.box()
+        box.enabled = cylindrical_enabled
         box.prop(props, "use_hub", icon="MESH_CYLINDER")
         col = box.column()
-        col.enabled = props.use_hub
+        col.enabled = cylindrical_enabled and props.use_hub
         col.prop(props, "hub_radius")
         col.prop(props, "hub_height")
         col.prop(props, "hub_sides")
 
-        # Zentrische Bohrung
+        # Zentrische Bohrung (auch beim Kegelrad verfuegbar)
         box = layout.box()
         box.prop(props, "use_bore", icon="HANDLE_ALIGN")
         col = box.column()
@@ -673,18 +885,20 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
 
         # Dezentrale Bohrungen
         box = layout.box()
+        box.enabled = cylindrical_enabled
         box.prop(props, "use_holes", icon="EMPTY_AXIS")
         col = box.column()
-        col.enabled = props.use_holes
+        col.enabled = cylindrical_enabled and props.use_holes
         col.prop(props, "hole_count")
         col.prop(props, "hole_radius")
         col.prop(props, "hole_pitch_radius")
 
         # Stacking
         box = layout.box()
+        box.enabled = cylindrical_enabled
         box.prop(props, "use_stack", icon="DUPLICATE")
         col = box.column()
-        col.enabled = props.use_stack
+        col.enabled = cylindrical_enabled and props.use_stack
         col.prop(props, "stack_count")
         col.prop(props, "stack_z_gap")
         # Stufe 2
