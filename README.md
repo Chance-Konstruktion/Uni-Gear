@@ -10,7 +10,7 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 
 ## ✨ Features
 
-- ✅ Voll parametrisch: Teilkreisradius, Zähnezahl, Dicke, Eingriffswinkel
+- ✅ Voll parametrisch: Teilkreisdurchmesser, Zähnezahl, Dicke, Eingriffswinkel
 - ✅ Echte Evolventenverzahnung nach DIN-867-Bezugsprofil (`h_aP* = 1.0`, `h_fP* = 1.25`)
 - ✅ Korrekte Teilkreis-Zahndicke `π·m/2` per `inv(α) = tan(α) − α`
 - ✅ Tangential geblendeter Kreisbogen-Fillet am Zahnfuß
@@ -20,7 +20,7 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 - ✅ Optionale dezentrale Entlastungs-/Befestigungsbohrungen (Anzahl, Radius, Lochkreis)
 - ✅ Stufenrad / Stacking: bis zu 3 Zahnradstufen auf einer Achse
 - ✅ Kegelverzahnung (Bevel Gear) – gerad- und spiralverzahnt
-- ✅ Eigene GUI im N-Panel (Tab „Erstellen") mit erhaltener Einstellung
+- ✅ Eigene GUI im N-Panel (Tab „Uni-Gear") mit erhaltener Einstellung
 - ✅ Ein-Klick-Erstellung mit Undo-Support
 - ✅ Sauberer Blender-Python-Code (bmesh)
 - ✅ MIT License – frei nutzbar und modifizierbar
@@ -30,13 +30,13 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 1. Lade die Datei [`gear_generator.py`](https://github.com/Chance-Konstruktion/Uni-Gear/blob/main/gear_generator.py) herunter  
 2. In Blender: **Edit → Preferences → Add-ons → Install**  
 3. Wähle die heruntergeladene `.py`-Datei aus  
-4. Aktiviere das Add-on „Parametric Gear Generator"  
-5. Drücke `N` → Tab **Erstellen** → „Evolventen Zahnrad"
+4. Aktiviere das Add-on „Uni-Gear"  
+5. Drücke `N` → Tab **Uni-Gear** → „Zahnrad erstellen"
 
 ## 🚀 Verwendung
 
 1. Im 3D-Viewport die Sidebar mit `N` öffnen  
-2. Zum Tab **Erstellen** wechseln  
+2. Zum Tab **Uni-Gear** wechseln  
 3. Parameter anpassen (optionale Sektionen per Toggle aktivieren)  
 4. Auf **„Zahnrad erstellen"** klicken  
 
@@ -44,14 +44,18 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 ## Parameter
 
+> Alle Längen werden als **Durchmesser** angegeben (nicht als Radius) – so wie
+> Zahnräder in der Praxis bezeichnet werden (z. B. „20 mm Zahnrad"). Intern
+> rechnet das Add-on weiterhin radienbasiert.
+
 ### Zahnrad
 
-| Parameter          | Beschreibung                          | Standardwert |
-|--------------------|---------------------------------------|--------------|
-| Teilkreisradius    | Radius des Teilkreises                | 20 mm        |
-| Zähnezahl          | Anzahl der Zähne                      | 24           |
-| Dicke              | Zahnbreite (axiale Dicke)             | 5 mm         |
-| Eingriffswinkel    | Druckwinkel in Grad                   | 20°          |
+| Parameter              | Beschreibung                          | Standardwert |
+|------------------------|---------------------------------------|--------------|
+| Teilkreisdurchmesser   | Durchmesser des Teilkreises           | 20 mm        |
+| Zähnezahl              | Anzahl der Zähne                      | 24           |
+| Dicke                  | Zahnbreite (axiale Dicke)             | 5 mm         |
+| Eingriffswinkel        | Druckwinkel in Grad                   | 20°          |
 
 ### Schrägverzahnung (optional)
 
@@ -61,33 +65,33 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 ### Zentrische Bohrung (optional)
 
-| Parameter          | Beschreibung                          | Standardwert |
-|--------------------|---------------------------------------|--------------|
-| Bohrungsradius     | Radius der Mittelbohrung              | 4 mm         |
+| Parameter              | Beschreibung                      | Standardwert |
+|------------------------|-----------------------------------|--------------|
+| Bohrungsdurchmesser    | Durchmesser der Mittelbohrung     | 6 mm         |
 
 ### Dezentrale Bohrungen (optional)
 
-| Parameter          | Beschreibung                          | Standardwert |
-|--------------------|---------------------------------------|--------------|
-| Anzahl             | Anzahl gleichmäßig verteilter Löcher  | 6            |
-| Radius             | Radius jedes Lochs                    | 2 mm         |
-| Lochkreisradius    | Radius, auf dem die Löcher liegen     | 10 mm        |
+| Parameter              | Beschreibung                              | Standardwert |
+|------------------------|-------------------------------------------|--------------|
+| Anzahl                 | Anzahl gleichmäßig verteilter Löcher      | 3            |
+| Durchmesser            | Durchmesser jedes Lochs                   | 3 mm         |
+| Lochkreisdurchmesser   | Durchmesser, auf dem die Löcher liegen    | 10 mm        |
 
 ### Nabe (optional)
 
 | Parameter          | Beschreibung                                      | Standardwert |
 |--------------------|---------------------------------------------------|--------------|
-| Nabenradius        | Außenradius der zylindrischen Nabe                | 8 mm         |
+| Nabendurchmesser   | Außendurchmesser der zylindrischen Nabe           | 16 mm        |
 | Nabenhöhe          | Überstand der Nabe über die Stirnfläche           | 4 mm         |
 | Seite              | Beidseitig / nur Rückseite / nur Vorderseite      | Beidseitig   |
 
 ### Stufenrad / Stacking (optional)
 
-| Parameter          | Beschreibung                                      | Standardwert |
-|--------------------|---------------------------------------------------|--------------|
-| Stufen gesamt      | Anzahl Zahnradstufen auf der gemeinsamen Achse    | 2            |
-| Abstand            | Axialer Luftspalt zwischen zwei Stufen            | 0 mm         |
-| Stufe 2/3          | Eigener Teilkreisradius, Zähnezahl und Dicke      | —            |
+| Parameter          | Beschreibung                                            | Standardwert |
+|--------------------|---------------------------------------------------------|--------------|
+| Stufen gesamt      | Anzahl Zahnradstufen auf der gemeinsamen Achse          | 2            |
+| Abstand            | Axialer Luftspalt zwischen zwei Stufen                  | 0 mm         |
+| Stufe 2/3          | Eigener Teilkreisdurchmesser, Zähnezahl und Dicke       | —            |
 
 ### Kegelverzahnung (optional)
 

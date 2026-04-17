@@ -3,11 +3,11 @@ import bmesh
 import math
 
 bl_info = {
-    "name": "Parametric Evolvent Gear Generator",
+    "name": "Uni-Gear",
     "author": "Du + KI-Assistent",
-    "version": (6, 0, 0),
+    "version": (6, 1, 0),
     "blender": (3, 0, 0),
-    "location": "View3D > Sidebar > Erstellen",
+    "location": "View3D > Sidebar > Uni-Gear",
     "description": "Evolventenzahnrad mit Schraegverzahnung, Nabe, Stacking und Kegelverzahnung.",
     "category": "Add Mesh",
 }
@@ -312,6 +312,14 @@ def create_gear_mesh(
             raise ValueError("Bohrungsradius muss kleiner als Nabenradius sein.")
     if has_holes:
         inner_clear = max(hub_radius if has_hub else 0.0, bore_radius if has_bore else 0.0)
+        # Verfuegbarer Ringraum zwischen innerer Sperre (Bohrung/Nabe) und Fusskreis.
+        # Ohne diese Groesse laufen die weiteren Prueflogiken leer, wenn z.B. der
+        # Fusskreis kleiner als die Bohrung ist -> vermeidet Absturz durch negative
+        # Abstaende in den folgenden Vergleichen.
+        r_available = root_radius - inner_clear
+        if r_available <= 2.0 * hole_radius:
+            raise ValueError(
+                "Kein Platz fuer dezentrale Bohrungen zwischen Bohrung/Nabe und Fusskreis.")
         if hole_pitch_radius - hole_radius < inner_clear * 1.05:
             raise ValueError("Dezentrale Bohrungen ueberlappen Nabe oder Bohrung.")
         if hole_pitch_radius + hole_radius > root_radius * 0.95:
@@ -583,10 +591,11 @@ def create_bevel_gear_mesh(
 
 class GearGeneratorProperties(bpy.types.PropertyGroup):
     # --- Basisgeometrie ---
-    radius: bpy.props.FloatProperty(
-        name="Teilkreisradius",
-        description="Radius des Teilkreises",
-        default=0.02, min=0.001, max=1.0, unit="LENGTH",
+    # UI arbeitet mit Durchmessern; die interne Berechnung nutzt weiterhin Radien.
+    pitch_diameter: bpy.props.FloatProperty(
+        name="Teilkreisdurchmesser",
+        description="Durchmesser des Teilkreises",
+        default=0.020, min=0.002, max=2.0, unit="LENGTH",
     )
     teeth: bpy.props.IntProperty(
         name="Zaehnezahl", default=24, min=6, max=200,
@@ -611,9 +620,9 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     use_hub: bpy.props.BoolProperty(
         name="Nabe", description="Zylindrische Nabe auf einer oder beiden Stirnseiten", default=False,
     )
-    hub_radius: bpy.props.FloatProperty(
-        name="Nabenradius", description="Aussenradius der Nabe",
-        default=0.008, min=0.0001, max=1.0, unit="LENGTH",
+    hub_diameter: bpy.props.FloatProperty(
+        name="Nabendurchmesser", description="Aussendurchmesser der Nabe",
+        default=0.016, min=0.0002, max=2.0, unit="LENGTH",
     )
     hub_height: bpy.props.FloatProperty(
         name="Nabenhoehe", description="Wie weit die Nabe ueber die Stirnflaeche hinausragt",
@@ -634,9 +643,9 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         name="Zentrische Bohrung", description="Bohrung entlang der Achse (durch Nabe falls vorhanden)",
         default=False,
     )
-    bore_radius: bpy.props.FloatProperty(
-        name="Bohrungsradius",
-        default=0.004, min=0.0001, max=1.0, unit="LENGTH",
+    bore_diameter: bpy.props.FloatProperty(
+        name="Bohrungsdurchmesser",
+        default=0.006, min=0.0002, max=2.0, unit="LENGTH",
     )
 
     # --- Dezentrale Bohrungen ---
@@ -644,13 +653,13 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         name="Dezentrale Bohrungen", description="Gewichtserleichterungs- oder Befestigungsbohrungen",
         default=False,
     )
-    hole_count: bpy.props.IntProperty(name="Anzahl", default=6, min=1, max=32)
-    hole_radius: bpy.props.FloatProperty(
-        name="Radius", default=0.002, min=0.0001, max=1.0, unit="LENGTH",
+    hole_count: bpy.props.IntProperty(name="Anzahl", default=3, min=1, max=32)
+    hole_diameter: bpy.props.FloatProperty(
+        name="Durchmesser", default=0.003, min=0.0002, max=2.0, unit="LENGTH",
     )
-    hole_pitch_radius: bpy.props.FloatProperty(
-        name="Lochkreisradius", description="Radius des Lochkreises",
-        default=0.01, min=0.0001, max=1.0, unit="LENGTH",
+    hole_pitch_diameter: bpy.props.FloatProperty(
+        name="Lochkreisdurchmesser", description="Durchmesser des Lochkreises",
+        default=0.010, min=0.0002, max=2.0, unit="LENGTH",
     )
 
     # --- Kegelverzahnung (Bevel Gear) ---
@@ -696,16 +705,16 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         default=0.0, min=0.0, max=0.1, unit="LENGTH",
     )
     # Stufe 2
-    stack2_radius: bpy.props.FloatProperty(
-        name="Teilkreisradius", default=0.015, min=0.001, max=1.0, unit="LENGTH",
+    stack2_pitch_diameter: bpy.props.FloatProperty(
+        name="Teilkreisdurchmesser", default=0.015, min=0.002, max=2.0, unit="LENGTH",
     )
     stack2_teeth: bpy.props.IntProperty(name="Zaehnezahl", default=16, min=6, max=200)
     stack2_thickness: bpy.props.FloatProperty(
         name="Dicke", default=0.005, min=0.0001, max=1.0, unit="LENGTH",
     )
     # Stufe 3
-    stack3_radius: bpy.props.FloatProperty(
-        name="Teilkreisradius", default=0.01, min=0.001, max=1.0, unit="LENGTH",
+    stack3_pitch_diameter: bpy.props.FloatProperty(
+        name="Teilkreisdurchmesser", default=0.010, min=0.002, max=2.0, unit="LENGTH",
     )
     stack3_teeth: bpy.props.IntProperty(name="Zaehnezahl", default=10, min=6, max=200)
     stack3_thickness: bpy.props.FloatProperty(
@@ -726,12 +735,15 @@ class MESH_OT_create_gear(bpy.types.Operator):
         props = context.scene.gear_generator
 
         # Kegelrad-Pfad: separater Builder, ignoriert inkompatible Optionen.
+        # UI-Werte sind Durchmesser; interne Berechnung erwartet Radien -> halbieren.
+        pitch_r = props.pitch_diameter * 0.5
+
         if props.use_bevel:
             spiral_deg = props.spiral_angle if props.use_spiral_bevel else 0.0
-            bore_r_b   = props.bore_radius  if props.use_bore         else 0.0
+            bore_r_b   = (props.bore_diameter * 0.5) if props.use_bore else 0.0
             try:
                 create_bevel_gear_mesh(
-                    pitch_radius=props.radius,
+                    pitch_radius=pitch_r,
                     teeth=props.teeth,
                     face_width=props.bevel_face_width,
                     pressure_angle_deg=props.pressure_angle,
@@ -747,28 +759,32 @@ class MESH_OT_create_gear(bpy.types.Operator):
             return {"FINISHED"}
 
         helix_deg = props.helix_angle if props.use_helical else 0.0
-        bore_r    = props.bore_radius if props.use_bore  else 0.0
-        hole_n    = props.hole_count  if props.use_holes else 0
-        hole_r    = props.hole_radius       if props.use_holes else 0.0
-        hole_pr   = props.hole_pitch_radius if props.use_holes else 0.0
-        hub_r     = props.hub_radius  if props.use_hub else 0.0
-        hub_h     = props.hub_height  if props.use_hub else 0.0
-        hub_s     = props.hub_sides   if props.use_hub else "BOTH"
+        bore_r    = (props.bore_diameter * 0.5)        if props.use_bore  else 0.0
+        hole_n    =  props.hole_count                  if props.use_holes else 0
+        hole_r    = (props.hole_diameter * 0.5)        if props.use_holes else 0.0
+        hole_pr   = (props.hole_pitch_diameter * 0.5)  if props.use_holes else 0.0
+        hub_r     = (props.hub_diameter * 0.5)         if props.use_hub   else 0.0
+        hub_h     =  props.hub_height                  if props.use_hub   else 0.0
+        hub_s     =  props.hub_sides                   if props.use_hub   else "BOTH"
 
         # Stufenparameter sammeln (immer Stufe 1 = Hauptrad)
         stages = [
-            {"pitch_radius": props.radius,        "teeth": props.teeth,
-             "thickness": props.thickness,         "pressure_angle": props.pressure_angle},
+            {"pitch_radius": pitch_r, "teeth": props.teeth,
+             "thickness": props.thickness, "pressure_angle": props.pressure_angle},
         ]
         if props.use_stack:
             stages.append({
-                "pitch_radius": props.stack2_radius, "teeth": props.stack2_teeth,
-                "thickness": props.stack2_thickness, "pressure_angle": props.pressure_angle,
+                "pitch_radius": props.stack2_pitch_diameter * 0.5,
+                "teeth": props.stack2_teeth,
+                "thickness": props.stack2_thickness,
+                "pressure_angle": props.pressure_angle,
             })
             if props.stack_count >= 3:
                 stages.append({
-                    "pitch_radius": props.stack3_radius, "teeth": props.stack3_teeth,
-                    "thickness": props.stack3_thickness, "pressure_angle": props.pressure_angle,
+                    "pitch_radius": props.stack3_pitch_diameter * 0.5,
+                    "teeth": props.stack3_teeth,
+                    "thickness": props.stack3_thickness,
+                    "pressure_angle": props.pressure_angle,
                 })
 
         z = 0.0
@@ -824,11 +840,11 @@ class MESH_OT_create_gear(bpy.types.Operator):
 # ================================================================
 
 class VIEW3D_PT_gear_generator(bpy.types.Panel):
-    bl_label = "Evolventen Zahnrad"
+    bl_label = "Uni-Gear"
     bl_idname = "VIEW3D_PT_gear_generator"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "Erstellen"
+    bl_category = "Uni-Gear"
 
     def draw(self, context):
         layout = self.layout
@@ -837,7 +853,7 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         # Zahnrad
         box = layout.box()
         box.label(text="Zahnrad", icon="MESH_CIRCLE")
-        box.prop(props, "radius")
+        box.prop(props, "pitch_diameter")
         box.prop(props, "teeth")
         box.prop(props, "thickness")
         box.prop(props, "pressure_angle")
@@ -872,7 +888,7 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         box.prop(props, "use_hub", icon="MESH_CYLINDER")
         col = box.column()
         col.enabled = cylindrical_enabled and props.use_hub
-        col.prop(props, "hub_radius")
+        col.prop(props, "hub_diameter")
         col.prop(props, "hub_height")
         col.prop(props, "hub_sides")
 
@@ -881,7 +897,7 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         box.prop(props, "use_bore", icon="HANDLE_ALIGN")
         col = box.column()
         col.enabled = props.use_bore
-        col.prop(props, "bore_radius")
+        col.prop(props, "bore_diameter")
 
         # Dezentrale Bohrungen
         box = layout.box()
@@ -890,8 +906,8 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         col = box.column()
         col.enabled = cylindrical_enabled and props.use_holes
         col.prop(props, "hole_count")
-        col.prop(props, "hole_radius")
-        col.prop(props, "hole_pitch_radius")
+        col.prop(props, "hole_diameter")
+        col.prop(props, "hole_pitch_diameter")
 
         # Stacking
         box = layout.box()
@@ -905,14 +921,14 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         sub2 = col.box()
         sub2.enabled = props.use_stack
         sub2.label(text="Stufe 2")
-        sub2.prop(props, "stack2_radius")
+        sub2.prop(props, "stack2_pitch_diameter")
         sub2.prop(props, "stack2_teeth")
         sub2.prop(props, "stack2_thickness")
         # Stufe 3
         if props.stack_count >= 3:
             sub3 = col.box()
             sub3.label(text="Stufe 3")
-            sub3.prop(props, "stack3_radius")
+            sub3.prop(props, "stack3_pitch_diameter")
             sub3.prop(props, "stack3_teeth")
             sub3.prop(props, "stack3_thickness")
 
