@@ -8,7 +8,6 @@ Build realistic gears with just a few clicks right from the N-panel.
 Ideal for mechanical design, 3D printing, animation, technical visualization and game assets.
 
 ![Gear Generator Screenshot](https://github.com/Chance-Konstruktion/Uni-Gear/blob/main/screenshot.png)
-*(Screenshot will be added later – just take a picture of the sidebar and upload it.)*
 
 ## ✨ Features
 
