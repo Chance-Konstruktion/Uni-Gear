@@ -7,8 +7,7 @@
 Erstelle realistische Zahnräder mit nur wenigen Klicks direkt im N-Panel.  
 Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisierungen und Game-Assets.
 
-![Zahnrad Generator Screenshot](https://github.com/Chance-Konstruktion/Uni-Gear/blob/main/screenshot.png)  
-*(Screenshot wird später eingefügt – einfach ein Bild von der Sidebar machen und hochladen)*
+![Zahnrad Generator Screenshot](https://github.com/Chance-Konstruktion/Uni-Gear/blob/main/screenshot.png)
 
 ## ✨ Features
 
