@@ -220,6 +220,7 @@ def create_gear_mesh(radius, teeth, thickness, pressure_angle_deg):
         # Wir haben pro Zahn 4 Vertices, müssen sie aber in Reihenfolge bringen.
         # Diese Logik würde den Rahmen sprengen. Stattdessen kehren wir zum einfacheren,
         # aber korrekten Ansatz zurück: Berechnung aller Punkte als geordnete Liste.
+        pass
 
     # Daher: Neustrukturierung der Profil-Erstellung (siehe unten)
 
