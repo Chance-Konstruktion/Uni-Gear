@@ -344,17 +344,53 @@ _classes = (
 )
 
 
-def register():
+def _safe_unregister():
+    """Best-effort Cleanup: entfernt vorherige Registrierungen, ignoriert Fehler.
+    Wichtig fuer wiederholtes Ausfuehren des Skripts im Blender-Texteditor, da
+    eine bereits an Scene gebundene PropertyGroup als 'readonly' gilt und ein
+    erneutes register_class() sonst mit RuntimeError abbricht."""
+    if hasattr(bpy.types.Scene, "gear_generator"):
+        try:
+            del bpy.types.Scene.gear_generator
+        except Exception:
+            pass
+    for cls in reversed(_classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
+
+
+def _do_register():
     for cls in _classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.gear_generator = bpy.props.PointerProperty(type=GearGeneratorProperties)
 
 
+def register():
+    # Erst aufraeumen, damit Re-Runs aus dem Texteditor nicht am 'readonly'
+    # Status der bereits gebundenen PropertyGroup scheitern.
+    _safe_unregister()
+    try:
+        _do_register()
+    except RuntimeError as exc:
+        if "readonly" not in str(exc).lower():
+            raise
+        # Blender ist in einem restriktiven Kontext (z.B. File-Load, Render).
+        # Registrierung per Timer verschieben, bis der Kontext wieder frei ist.
+        def _deferred():
+            try:
+                _do_register()
+            except RuntimeError as exc_inner:
+                if "readonly" in str(exc_inner).lower():
+                    return 0.5  # spaeter erneut versuchen
+                raise
+            return None  # einmalige Ausfuehrung, Timer beenden
+        bpy.app.timers.register(_deferred, first_interval=0.5)
+
+
 def unregister():
-    if hasattr(bpy.types.Scene, "gear_generator"):
-        del bpy.types.Scene.gear_generator
-    for cls in reversed(_classes):
-        bpy.utils.unregister_class(cls)
+    _safe_unregister()
 
 
 if __name__ == "__main__":
