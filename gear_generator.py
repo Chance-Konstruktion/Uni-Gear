@@ -5,7 +5,7 @@ import math
 bl_info = {
     "name": "Uni-Gear",
     "author": "Du + KI-Assistent",
-    "version": (6, 1, 0),
+    "version": (6, 2, 0),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Uni-Gear",
     "description": "Evolventenzahnrad mit Schraegverzahnung, Nabe, Stacking und Kegelverzahnung.",
@@ -836,10 +836,16 @@ class MESH_OT_create_gear(bpy.types.Operator):
 
 
 # ================================================================
-# PANEL
+# PANEL  (einklappbare Sub-Panels fuer einen schlanken Workflow)
 # ================================================================
 
+def _panel_gear_props(context):
+    return context.scene.gear_generator
+
+
 class VIEW3D_PT_gear_generator(bpy.types.Panel):
+    """Hauptpanel: Basis-Parameter + der "Zahnrad erstellen"-Button ganz oben,
+    damit er bei langem Panelinhalt immer sichtbar bleibt."""
     bl_label = "Uni-Gear"
     bl_idname = "VIEW3D_PT_gear_generator"
     bl_space_type = "VIEW_3D"
@@ -848,9 +854,15 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        props  = context.scene.gear_generator
+        props  = _panel_gear_props(context)
 
-        # Zahnrad
+        # Erstellen-Button ganz oben, gross und immer sichtbar.
+        row = layout.row()
+        row.scale_y = 1.6
+        row.operator("mesh.create_gear", icon="MESH_CIRCLE", text="Zahnrad erstellen")
+
+        layout.separator()
+
         box = layout.box()
         box.label(text="Zahnrad", icon="MESH_CIRCLE")
         box.prop(props, "pitch_diameter")
@@ -858,10 +870,51 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         box.prop(props, "thickness")
         box.prop(props, "pressure_angle")
 
-        # Kegelverzahnung (Bevel) — schliesst Schraegverzahnung/Nabe/Stacking aus
-        box = layout.box()
-        box.prop(props, "use_bevel", icon="CONE")
-        col = box.column()
+
+class _GearSubPanel(bpy.types.Panel):
+    """Gemeinsame Basis fuer einklappbare Sub-Panels unter dem Hauptpanel."""
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Uni-Gear"
+    bl_parent_id = "VIEW3D_PT_gear_generator"
+    bl_options   = {"DEFAULT_CLOSED"}
+
+    # Unterklassen setzen diese Felder:
+    toggle_prop    = ""   # Name der BoolProperty, die die Sektion aktiviert (optional).
+    requires_cyl   = False  # True: Sektion ist im Kegelrad-Modus deaktiviert.
+
+    def draw_header(self, context):
+        props = _panel_gear_props(context)
+        if self.toggle_prop:
+            row = self.layout.row(align=True)
+            if self.requires_cyl:
+                row.enabled = not props.use_bevel
+            row.prop(props, self.toggle_prop, text="")
+
+
+class VIEW3D_PT_gear_helical(_GearSubPanel):
+    bl_label    = "Schraegverzahnung"
+    bl_idname   = "VIEW3D_PT_gear_helical"
+    toggle_prop = "use_helical"
+    requires_cyl = True
+
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
+        col.enabled = props.use_helical and not props.use_bevel
+        col.prop(props, "helix_angle")
+
+
+class VIEW3D_PT_gear_bevel(_GearSubPanel):
+    bl_label    = "Kegelverzahnung"
+    bl_idname   = "VIEW3D_PT_gear_bevel"
+    toggle_prop = "use_bevel"
+
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
         col.enabled = props.use_bevel
         col.prop(props, "bevel_cone_angle")
         col.prop(props, "bevel_face_width")
@@ -870,69 +923,77 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         sub.enabled = props.use_bevel and props.use_spiral_bevel
         sub.prop(props, "spiral_angle")
 
-        # Im Kegelrad-Modus haben Helical / Nabe / Stacking / dezentrale Bohrungen
-        # keine Bedeutung; wir deaktivieren die entsprechenden UI-Abschnitte.
-        cylindrical_enabled = not props.use_bevel
 
-        # Schraegverzahnung
-        box = layout.box()
-        box.enabled = cylindrical_enabled
-        box.prop(props, "use_helical", icon="MOD_SCREW")
-        col = box.column()
-        col.enabled = cylindrical_enabled and props.use_helical
-        col.prop(props, "helix_angle")
+class VIEW3D_PT_gear_hub(_GearSubPanel):
+    bl_label    = "Nabe (Hub)"
+    bl_idname   = "VIEW3D_PT_gear_hub"
+    toggle_prop = "use_hub"
+    requires_cyl = True
 
-        # Nabe
-        box = layout.box()
-        box.enabled = cylindrical_enabled
-        box.prop(props, "use_hub", icon="MESH_CYLINDER")
-        col = box.column()
-        col.enabled = cylindrical_enabled and props.use_hub
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
+        col.enabled = props.use_hub and not props.use_bevel
         col.prop(props, "hub_diameter")
         col.prop(props, "hub_height")
         col.prop(props, "hub_sides")
 
-        # Zentrische Bohrung (auch beim Kegelrad verfuegbar)
-        box = layout.box()
-        box.prop(props, "use_bore", icon="HANDLE_ALIGN")
-        col = box.column()
+
+class VIEW3D_PT_gear_bore(_GearSubPanel):
+    bl_label    = "Zentrische Bohrung"
+    bl_idname   = "VIEW3D_PT_gear_bore"
+    toggle_prop = "use_bore"
+    # Kegelrad unterstuetzt zentrische Bohrung ebenfalls -> requires_cyl bleibt False.
+
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
         col.enabled = props.use_bore
         col.prop(props, "bore_diameter")
 
-        # Dezentrale Bohrungen
-        box = layout.box()
-        box.enabled = cylindrical_enabled
-        box.prop(props, "use_holes", icon="EMPTY_AXIS")
-        col = box.column()
-        col.enabled = cylindrical_enabled and props.use_holes
+
+class VIEW3D_PT_gear_holes(_GearSubPanel):
+    bl_label    = "Dezentrale Bohrungen"
+    bl_idname   = "VIEW3D_PT_gear_holes"
+    toggle_prop = "use_holes"
+    requires_cyl = True
+
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
+        col.enabled = props.use_holes and not props.use_bevel
         col.prop(props, "hole_count")
         col.prop(props, "hole_diameter")
         col.prop(props, "hole_pitch_diameter")
 
-        # Stacking
-        box = layout.box()
-        box.enabled = cylindrical_enabled
-        box.prop(props, "use_stack", icon="DUPLICATE")
-        col = box.column()
-        col.enabled = cylindrical_enabled and props.use_stack
+
+class VIEW3D_PT_gear_stack(_GearSubPanel):
+    bl_label    = "Stufenrad (Stacking)"
+    bl_idname   = "VIEW3D_PT_gear_stack"
+    toggle_prop = "use_stack"
+    requires_cyl = True
+
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
+        col.enabled = props.use_stack and not props.use_bevel
         col.prop(props, "stack_count")
         col.prop(props, "stack_z_gap")
-        # Stufe 2
         sub2 = col.box()
-        sub2.enabled = props.use_stack
         sub2.label(text="Stufe 2")
         sub2.prop(props, "stack2_pitch_diameter")
         sub2.prop(props, "stack2_teeth")
         sub2.prop(props, "stack2_thickness")
-        # Stufe 3
         if props.stack_count >= 3:
             sub3 = col.box()
             sub3.label(text="Stufe 3")
             sub3.prop(props, "stack3_pitch_diameter")
             sub3.prop(props, "stack3_teeth")
             sub3.prop(props, "stack3_thickness")
-
-        layout.operator("mesh.create_gear", icon="MESH_CIRCLE")
 
 
 # ================================================================
@@ -943,6 +1004,12 @@ _classes = (
     GearGeneratorProperties,
     MESH_OT_create_gear,
     VIEW3D_PT_gear_generator,
+    VIEW3D_PT_gear_helical,
+    VIEW3D_PT_gear_bevel,
+    VIEW3D_PT_gear_hub,
+    VIEW3D_PT_gear_bore,
+    VIEW3D_PT_gear_holes,
+    VIEW3D_PT_gear_stack,
 )
 
 
