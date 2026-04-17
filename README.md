@@ -15,8 +15,11 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 - ✅ Korrekte Teilkreis-Zahndicke `π·m/2` per `inv(α) = tan(α) − α`
 - ✅ Tangential geblendeter Kreisbogen-Fillet am Zahnfuß
 - ✅ Optionale Schrägverzahnung mit einstellbarem Schrägungswinkel
-- ✅ Optionale zentrische Bohrung
+- ✅ Optionale Nabe (Hub) – ein- oder beidseitig
+- ✅ Optionale zentrische Bohrung (durchgehend durch Nabe und Kegel)
 - ✅ Optionale dezentrale Entlastungs-/Befestigungsbohrungen (Anzahl, Radius, Lochkreis)
+- ✅ Stufenrad / Stacking: bis zu 3 Zahnradstufen auf einer Achse
+- ✅ Kegelverzahnung (Bevel Gear) – gerad- und spiralverzahnt
 - ✅ Eigene GUI im N-Panel (Tab „Erstellen") mit erhaltener Einstellung
 - ✅ Ein-Klick-Erstellung mit Undo-Support
 - ✅ Sauberer Blender-Python-Code (bmesh)
@@ -70,6 +73,34 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 | Radius             | Radius jedes Lochs                    | 2 mm         |
 | Lochkreisradius    | Radius, auf dem die Löcher liegen     | 10 mm        |
 
+### Nabe (optional)
+
+| Parameter          | Beschreibung                                      | Standardwert |
+|--------------------|---------------------------------------------------|--------------|
+| Nabenradius        | Außenradius der zylindrischen Nabe                | 8 mm         |
+| Nabenhöhe          | Überstand der Nabe über die Stirnfläche           | 4 mm         |
+| Seite              | Beidseitig / nur Rückseite / nur Vorderseite      | Beidseitig   |
+
+### Stufenrad / Stacking (optional)
+
+| Parameter          | Beschreibung                                      | Standardwert |
+|--------------------|---------------------------------------------------|--------------|
+| Stufen gesamt      | Anzahl Zahnradstufen auf der gemeinsamen Achse    | 2            |
+| Abstand            | Axialer Luftspalt zwischen zwei Stufen            | 0 mm         |
+| Stufe 2/3          | Eigener Teilkreisradius, Zähnezahl und Dicke      | —            |
+
+### Kegelverzahnung (optional)
+
+| Parameter          | Beschreibung                                              | Standardwert |
+|--------------------|-----------------------------------------------------------|--------------|
+| Teilkegelwinkel    | Halber Öffnungswinkel des Teilkegels δ (45° = Miter 1:1)  | 45°          |
+| Zahnbreite         | Zahnlänge entlang der Kegelmantellinie                    | 8 mm         |
+| Spiralverzahnung   | Gerad- oder spiralverzahntes Kegelrad                     | aus          |
+| Spiralwinkel       | Mittlerer Spiralwinkel (bei Spiralverzahnung)             | 35°          |
+
+> Hinweis: Im Kegelrad-Modus sind Schrägverzahnung, Nabe, dezentrale Bohrungen und
+> Stacking deaktiviert. Eine zentrische Bohrung kann zusätzlich eingeschaltet werden.
+
 ## Roadmap (nächste Versionen)
 
 Erledigt:
@@ -77,14 +108,14 @@ Erledigt:
 - [x] Echte Evolventen-Zahnform
 - [x] Schrägverzahnung (Helix)
 - [x] Automatische Bohrung (zentrisch + dezentrale Entlastungslöcher)
+- [x] Nabe (Hub) – ein- oder beidseitig, kombinierbar mit der Bohrung
+- [x] Zahnradkombination / Stacking (mehrere Räder auf einer Achse, z. B. Stufenräder)
+- [x] Kegelverzahnung (Bevel Gear, gerad- und spiralverzahnt)
 
 Offen:
 
 - [ ] Innenverzahnung (Internal Gear / Hohlrad)
 - [ ] Zahnrad-Paarung (zwei Räder passend zueinander, inkl. Achsabstand)
-- [ ] Zahnradkombination / Stacking (mehrere Räder auf einer Achse, z. B. Stufenräder)
-- [ ] Kegelverzahnung (Bevel Gear, gerad- und spiralverzahnt)
-- [ ] Nabe (Hub) – als Alternative oder in Kombination mit der Bohrung
 - [ ] DIN-3960-Modus: Modul-Dropdown (DIN 780), Profilverschiebung `x`, echte Trochoide am Zahnfuß, Unterschnitt-Warnung
 
 ## Mitwirken
