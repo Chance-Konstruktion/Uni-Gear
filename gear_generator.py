@@ -5,7 +5,7 @@ import math
 bl_info = {
     "name": "Parametric Evolvent Gear Generator",
     "author": "Du + KI-Assistent",
-    "version": (4, 0, 0),
+    "version": (5, 0, 0),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Erstellen",
     "description": "Evolventenzahnrad mit optionaler Schraegverzahnung und Bohrungen.",
@@ -279,27 +279,43 @@ def create_gear_mesh(
     hole_count=0,
     hole_radius=0.0,
     hole_pitch_radius=0.0,
+    hub_radius=0.0,
+    hub_height=0.0,
+    hub_sides="BOTH",
+    z_offset=0.0,
 ):
-    """Erzeugt das vollstaendige 3D-Mesh eines (optional schraegverzahnten) Zahnrads
-    mit optionaler zentrischer Bohrung und optionalen dezentralen Bohrungen."""
+    """Erstellt ein vollstaendiges 3D-Mesh eines Evolventen-Zahnrads.
+
+    Optional: Schraegverzahnung, zentrische Bohrung, dezentrale Bohrungen,
+    und eine Nabe (Hub) auf einer oder beiden Stirnseiten.
+    z_offset verschiebt das fertige Objekt entlang Z (fuer Stacking).
+    """
     profile_2d, root_radius, _tip_radius = build_gear_profile(
         pitch_radius=pitch_radius,
         teeth=teeth,
         pressure_angle_deg=pressure_angle_deg,
     )
 
-    # Validierung: Bohrungen duerfen weder den Fusskreis noch einander beruehren.
-    if bore_radius > 0.0 and bore_radius >= root_radius * 0.95:
+    has_hub_back  = hub_radius > 0.0 and hub_height > 0.0 and hub_sides in ("BOTH", "BACK")
+    has_hub_front = hub_radius > 0.0 and hub_height > 0.0 and hub_sides in ("BOTH", "FRONT")
+    has_hub       = has_hub_back or has_hub_front
+    has_bore      = bore_radius > 0.0
+    has_holes     = hole_count > 0 and hole_radius > 0.0
+
+    # --- Validierung ---
+    if has_bore and bore_radius >= root_radius * 0.95:
         raise ValueError("Zentrische Bohrung zu gross fuer diesen Fusskreisradius.")
-    if hole_count > 0:
-        if hole_radius <= 0.0:
-            raise ValueError("Dezentrale Bohrungen: Radius muss > 0 sein.")
-        inner_limit = max(bore_radius, 0.0) * 1.05
-        if hole_pitch_radius - hole_radius < inner_limit:
-            raise ValueError("Dezentrale Bohrungen ueberlappen die zentrische Bohrung.")
+    if has_hub:
+        if hub_radius >= root_radius * 0.95:
+            raise ValueError("Nabenradius zu gross fuer diesen Fusskreisradius.")
+        if has_bore and bore_radius >= hub_radius:
+            raise ValueError("Bohrungsradius muss kleiner als Nabenradius sein.")
+    if has_holes:
+        inner_clear = max(hub_radius if has_hub else 0.0, bore_radius if has_bore else 0.0)
+        if hole_pitch_radius - hole_radius < inner_clear * 1.05:
+            raise ValueError("Dezentrale Bohrungen ueberlappen Nabe oder Bohrung.")
         if hole_pitch_radius + hole_radius > root_radius * 0.95:
             raise ValueError("Dezentrale Bohrungen ragen ueber den Fusskreis hinaus.")
-        # Abstand zwischen benachbarten Loechern auf ihrem Teilkreis.
         if hole_count >= 2:
             chord = 2.0 * hole_pitch_radius * math.sin(math.pi / hole_count)
             if chord < 2.0 * hole_radius * 1.05:
@@ -308,74 +324,109 @@ def create_gear_mesh(
     helix_angle = math.radians(helix_angle_deg)
     layers = _compute_helix_layers(thickness, helix_angle, pitch_radius)
 
+    def _segs_for_r(r):
+        return max(32, min(128, int(2.0 * math.pi * r / (0.005 * pitch_radius)) + 16))
+
     mesh = bpy.data.meshes.new("Zahnrad")
-    obj = bpy.data.objects.new("Zahnrad", mesh)
+    obj  = bpy.data.objects.new("Zahnrad", mesh)
     bpy.context.collection.objects.link(obj)
+    bm   = bmesh.new()
 
-    bm = bmesh.new()
-
-    # --- Aussenhuelle ueber mehrere Z-Schichten (fuer Schraegverzahnung) ---
+    # --- Aussenhuelle (helical) ---
+    tan_helix   = math.tan(helix_angle)
     outer_layers = []
-    tan_helix = math.tan(helix_angle)
     for k in range(layers + 1):
-        z = thickness * k / layers
-        phi = z * tan_helix / pitch_radius
+        z       = thickness * k / layers
+        phi     = z * tan_helix / pitch_radius
         cos_phi = math.cos(phi)
         sin_phi = math.sin(phi)
-        layer = []
-        for (x, y) in profile_2d:
-            xr = x * cos_phi - y * sin_phi
-            yr = x * sin_phi + y * cos_phi
-            layer.append(bm.verts.new((xr, yr, z)))
-        outer_layers.append(layer)
-
+        outer_layers.append([
+            bm.verts.new((x * cos_phi - y * sin_phi, x * sin_phi + y * cos_phi, z))
+            for (x, y) in profile_2d
+        ])
     for k in range(layers):
         _bridge_rings(bm, outer_layers[k], outer_layers[k + 1])
-
     outer_bottom = outer_layers[0]
-    outer_top = outer_layers[-1]
+    outer_top    = outer_layers[-1]
 
-    # --- Zentrische Bohrung (axial, nicht verdreht) ---
-    bore_bottom = bore_top = None
-    if bore_radius > 0.0:
-        bore_segments = max(32, min(128, int(2.0 * math.pi * bore_radius / (0.01 * pitch_radius)) + 16))
-        bore_bottom = _add_circle_layer(bm, 0.0, 0.0, 0.0, bore_radius, bore_segments)
-        bore_top = _add_circle_layer(bm, 0.0, 0.0, thickness, bore_radius, bore_segments)
-        # Normalen sollen nach innen (ins Loch) zeigen -> umgekehrte Verdrahtung.
-        _bridge_rings(bm, bore_bottom, bore_top, reverse_winding=True)
+    # --- Naben-Aussenzylinder ---
+    # hub_back:  z = -hub_height  ..  0          (Rueckseite)
+    # hub_front: z = thickness    ..  thickness + hub_height  (Vorderseite)
+    hub_back_bot = hub_back_top = hub_front_bot = hub_front_top = None
+    if has_hub_back:
+        hub_segs      = _segs_for_r(hub_radius)
+        hub_back_bot  = _add_circle_layer(bm, 0.0, 0.0, -hub_height, hub_radius, hub_segs)
+        hub_back_top  = _add_circle_layer(bm, 0.0, 0.0,  0.0,        hub_radius, hub_segs)
+        _bridge_rings(bm, hub_back_bot, hub_back_top)           # Normalen nach aussen
+    if has_hub_front:
+        hub_segs      = _segs_for_r(hub_radius)
+        hub_front_bot = _add_circle_layer(bm, 0.0, 0.0, thickness,              hub_radius, hub_segs)
+        hub_front_top = _add_circle_layer(bm, 0.0, 0.0, thickness + hub_height, hub_radius, hub_segs)
+        _bridge_rings(bm, hub_front_bot, hub_front_top)
 
-    # --- Dezentrale Bohrungen (Entlastungs- bzw. Befestigungsbohrungen) ---
+    # --- Bohrung (erstreckt sich durch Nabe falls vorhanden) ---
+    # Wir benoetigen Bohrungsringe bei allen Stirnflaechen-Z-Werten fuer triangle_fill.
+    bore_z_start = -hub_height  if has_hub_back  else 0.0
+    bore_z_end   =  thickness + hub_height if has_hub_front else thickness
+    bore_rings   = {}  # {z_value: [BMVerts]}
+    if has_bore:
+        bore_segs    = _segs_for_r(bore_radius)
+        bore_z_set   = {bore_z_start, 0.0, thickness, bore_z_end}
+        bore_z_levels = sorted(bore_z_set)
+        for z in bore_z_levels:
+            bore_rings[z] = _add_circle_layer(bm, 0.0, 0.0, z, bore_radius, bore_segs)
+        for i in range(len(bore_z_levels) - 1):
+            _bridge_rings(bm, bore_rings[bore_z_levels[i]], bore_rings[bore_z_levels[i + 1]],
+                          reverse_winding=True)
+
+    # --- Dezentrale Bohrungen ---
     hole_bottoms = []
-    hole_tops = []
-    if hole_count > 0 and hole_radius > 0.0:
-        hole_segments = max(16, min(64, int(hole_radius / (0.005 * pitch_radius)) + 8))
+    hole_tops    = []
+    if has_holes:
+        hole_segs = _segs_for_r(hole_radius)
         for hi in range(hole_count):
-            center_angle = 2.0 * math.pi * hi / hole_count
-            cx = hole_pitch_radius * math.cos(center_angle)
-            cy = hole_pitch_radius * math.sin(center_angle)
-            ring_bottom = _add_circle_layer(bm, cx, cy, 0.0, hole_radius, hole_segments)
-            ring_top = _add_circle_layer(bm, cx, cy, thickness, hole_radius, hole_segments)
-            _bridge_rings(bm, ring_bottom, ring_top, reverse_winding=True)
-            hole_bottoms.append(ring_bottom)
-            hole_tops.append(ring_top)
+            ang = 2.0 * math.pi * hi / hole_count
+            cx  = hole_pitch_radius * math.cos(ang)
+            cy  = hole_pitch_radius * math.sin(ang)
+            rb  = _add_circle_layer(bm, cx, cy, 0.0,       hole_radius, hole_segs)
+            rt  = _add_circle_layer(bm, cx, cy, thickness, hole_radius, hole_segs)
+            _bridge_rings(bm, rb, rt, reverse_winding=True)
+            hole_bottoms.append(rb)
+            hole_tops.append(rt)
 
-    # --- End-Caps: planar triangulieren, inkl. aller Loch-Schleifen ---
-    bottom_loops = [outer_bottom]
-    top_loops = [outer_top]
-    if bore_bottom is not None:
-        bottom_loops.append(bore_bottom)
-        top_loops.append(bore_top)
-    bottom_loops.extend(hole_bottoms)
-    top_loops.extend(hole_tops)
+    # --- Stirnflaechen (triangle_fill) ---
+    # Die innere Grenze der Zahnrad-Stirnflaeche ist die Nabe (falls vorhanden)
+    # oder die Bohrung; nicht beides gleichzeitig (Nabe umschliesst die Bohrung).
+    def _fill_cap(outer_loop, inner_ring, extra_holes):
+        loops = [outer_loop]
+        if inner_ring is not None:
+            loops.append(inner_ring)
+        loops.extend(extra_holes)
+        bmesh.ops.triangle_fill(bm, edges=_collect_loop_edges(bm, loops), use_beauty=True)
 
-    bmesh.ops.triangle_fill(bm, edges=_collect_loop_edges(bm, bottom_loops), use_beauty=True)
-    bmesh.ops.triangle_fill(bm, edges=_collect_loop_edges(bm, top_loops), use_beauty=True)
+    # Zahnrad-Rueckseite (z=0)
+    inner_back = hub_back_top if has_hub_back else bore_rings.get(0.0)
+    _fill_cap(outer_bottom, inner_back, hole_bottoms)
+
+    # Zahnrad-Vorderseite (z=thickness)
+    inner_front = hub_front_bot if has_hub_front else bore_rings.get(thickness)
+    _fill_cap(outer_top, inner_front, hole_tops)
+
+    # Naben-Rueckseite (z=-hub_height) — Kreisring oder Vollkreis
+    if has_hub_back:
+        _fill_cap(hub_back_bot, bore_rings.get(bore_z_start), [])
+
+    # Naben-Vorderseite (z=thickness+hub_height)
+    if has_hub_front:
+        _fill_cap(hub_front_top, bore_rings.get(bore_z_end), [])
 
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
 
+    if z_offset != 0.0:
+        bmesh.ops.translate(bm, vec=(0.0, 0.0, z_offset), verts=bm.verts[:])
+
     bm.to_mesh(mesh)
     bm.free()
-
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
     return obj
@@ -389,92 +440,103 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     # --- Basisgeometrie ---
     radius: bpy.props.FloatProperty(
         name="Teilkreisradius",
-        description="Radius des Teilkreises in Szenen-Laengeneinheiten",
-        default=0.02,
-        min=0.001,
-        max=1.0,
-        unit="LENGTH",
+        description="Radius des Teilkreises",
+        default=0.02, min=0.001, max=1.0, unit="LENGTH",
     )
     teeth: bpy.props.IntProperty(
-        name="Zaehnezahl",
-        description="Anzahl der Zaehne",
-        default=24,
-        min=6,
-        max=200,
+        name="Zaehnezahl", default=24, min=6, max=200,
     )
     thickness: bpy.props.FloatProperty(
-        name="Dicke",
-        description="Dicke (Zahnbreite) des Zahnrads",
-        default=0.005,
-        min=0.0001,
-        max=1.0,
-        unit="LENGTH",
+        name="Dicke", description="Zahnbreite (axiale Dicke)",
+        default=0.005, min=0.0001, max=1.0, unit="LENGTH",
     )
     pressure_angle: bpy.props.FloatProperty(
-        name="Eingriffswinkel",
-        description="Druckwinkel in Grad (Standard 20)",
-        default=20.0,
-        min=10.0,
-        max=30.0,
+        name="Eingriffswinkel", description="Druckwinkel in Grad (Standard 20)",
+        default=20.0, min=10.0, max=30.0,
     )
 
     # --- Schraegverzahnung ---
-    use_helical: bpy.props.BoolProperty(
-        name="Schraegverzahnung",
-        description="Zaehne als Schraegverzahnung mit Verdrehung ueber die Zahnbreite erzeugen",
-        default=False,
-    )
+    use_helical: bpy.props.BoolProperty(name="Schraegverzahnung", default=False)
     helix_angle: bpy.props.FloatProperty(
-        name="Schraegungswinkel",
-        description="Winkel der Schraegverzahnung in Grad (0 = Geradverzahnung)",
-        default=15.0,
-        min=-45.0,
-        max=45.0,
+        name="Schraegungswinkel", description="Helix-Winkel in Grad",
+        default=15.0, min=-45.0, max=45.0,
+    )
+
+    # --- Nabe (Hub) ---
+    use_hub: bpy.props.BoolProperty(
+        name="Nabe", description="Zylindrische Nabe auf einer oder beiden Stirnseiten", default=False,
+    )
+    hub_radius: bpy.props.FloatProperty(
+        name="Nabenradius", description="Aussenradius der Nabe",
+        default=0.008, min=0.0001, max=1.0, unit="LENGTH",
+    )
+    hub_height: bpy.props.FloatProperty(
+        name="Nabenhoehe", description="Wie weit die Nabe ueber die Stirnflaeche hinausragt",
+        default=0.004, min=0.0001, max=1.0, unit="LENGTH",
+    )
+    hub_sides: bpy.props.EnumProperty(
+        name="Seite",
+        items=[
+            ("BOTH",  "Beidseitig",  "Nabe auf Vorder- und Rueckseite"),
+            ("BACK",  "Rueckseite",  "Nabe nur auf der Rueckseite (z=0)"),
+            ("FRONT", "Vorderseite", "Nabe nur auf der Vorderseite (z=Dicke)"),
+        ],
+        default="BOTH",
     )
 
     # --- Zentrische Bohrung ---
     use_bore: bpy.props.BoolProperty(
-        name="Zentrische Bohrung",
-        description="Bohrung entlang der Zahnradachse erzeugen",
+        name="Zentrische Bohrung", description="Bohrung entlang der Achse (durch Nabe falls vorhanden)",
         default=False,
     )
     bore_radius: bpy.props.FloatProperty(
         name="Bohrungsradius",
-        description="Radius der zentrischen Bohrung",
-        default=0.004,
-        min=0.0001,
-        max=1.0,
-        unit="LENGTH",
+        default=0.004, min=0.0001, max=1.0, unit="LENGTH",
     )
 
     # --- Dezentrale Bohrungen ---
     use_holes: bpy.props.BoolProperty(
-        name="Dezentrale Bohrungen",
-        description="Zusaetzliche Bohrungen fuer Gewichtsersparnis oder Befestigung",
+        name="Dezentrale Bohrungen", description="Gewichtserleichterungs- oder Befestigungsbohrungen",
         default=False,
     )
-    hole_count: bpy.props.IntProperty(
-        name="Anzahl",
-        description="Anzahl der gleichmaessig verteilten dezentralen Bohrungen",
-        default=6,
-        min=1,
-        max=32,
-    )
+    hole_count: bpy.props.IntProperty(name="Anzahl", default=6, min=1, max=32)
     hole_radius: bpy.props.FloatProperty(
-        name="Radius",
-        description="Radius jeder dezentralen Bohrung",
-        default=0.002,
-        min=0.0001,
-        max=1.0,
-        unit="LENGTH",
+        name="Radius", default=0.002, min=0.0001, max=1.0, unit="LENGTH",
     )
     hole_pitch_radius: bpy.props.FloatProperty(
-        name="Lochkreisradius",
-        description="Radius des Lochkreises, auf dem die dezentralen Bohrungen liegen",
-        default=0.01,
-        min=0.0001,
-        max=1.0,
-        unit="LENGTH",
+        name="Lochkreisradius", description="Radius des Lochkreises",
+        default=0.01, min=0.0001, max=1.0, unit="LENGTH",
+    )
+
+    # --- Stacking (Stufenrad) ---
+    use_stack: bpy.props.BoolProperty(
+        name="Stufenrad (Stacking)",
+        description="Mehrere Zahnradstufen auf derselben Achse erzeugen",
+        default=False,
+    )
+    stack_count: bpy.props.IntProperty(
+        name="Stufen gesamt", description="Gesamtzahl der Stufen (inkl. Hauptzahnrad)",
+        default=2, min=2, max=3,
+    )
+    stack_z_gap: bpy.props.FloatProperty(
+        name="Abstand", description="Axialer Abstand zwischen den Stufen",
+        default=0.0, min=0.0, max=0.1, unit="LENGTH",
+    )
+    # Stufe 2
+    stack2_radius: bpy.props.FloatProperty(
+        name="Teilkreisradius", default=0.015, min=0.001, max=1.0, unit="LENGTH",
+    )
+    stack2_teeth: bpy.props.IntProperty(name="Zaehnezahl", default=16, min=6, max=200)
+    stack2_thickness: bpy.props.FloatProperty(
+        name="Dicke", default=0.005, min=0.0001, max=1.0, unit="LENGTH",
+    )
+    # Stufe 3
+    stack3_radius: bpy.props.FloatProperty(
+        name="Teilkreisradius", default=0.01, min=0.001, max=1.0, unit="LENGTH",
+    )
+    stack3_teeth: bpy.props.IntProperty(name="Zaehnezahl", default=10, min=6, max=200)
+    stack3_thickness: bpy.props.FloatProperty(
+        name="Dicke", default=0.005, min=0.0001, max=1.0, unit="LENGTH",
     )
 
 
@@ -489,27 +551,77 @@ class MESH_OT_create_gear(bpy.types.Operator):
 
     def execute(self, context):
         props = context.scene.gear_generator
+
         helix_deg = props.helix_angle if props.use_helical else 0.0
-        bore_r = props.bore_radius if props.use_bore else 0.0
-        hole_n = props.hole_count if props.use_holes else 0
-        hole_r = props.hole_radius if props.use_holes else 0.0
-        hole_pr = props.hole_pitch_radius if props.use_holes else 0.0
-        try:
-            create_gear_mesh(
-                pitch_radius=props.radius,
-                teeth=props.teeth,
-                thickness=props.thickness,
-                pressure_angle_deg=props.pressure_angle,
-                helix_angle_deg=helix_deg,
-                bore_radius=bore_r,
-                hole_count=hole_n,
-                hole_radius=hole_r,
-                hole_pitch_radius=hole_pr,
-            )
-        except Exception as exc:
-            self.report({"ERROR"}, f"Zahnrad konnte nicht erzeugt werden: {exc}")
-            return {"CANCELLED"}
-        self.report({"INFO"}, f"Evolventen-Zahnrad mit {props.teeth} Zaehnen erstellt.")
+        bore_r    = props.bore_radius if props.use_bore  else 0.0
+        hole_n    = props.hole_count  if props.use_holes else 0
+        hole_r    = props.hole_radius       if props.use_holes else 0.0
+        hole_pr   = props.hole_pitch_radius if props.use_holes else 0.0
+        hub_r     = props.hub_radius  if props.use_hub else 0.0
+        hub_h     = props.hub_height  if props.use_hub else 0.0
+        hub_s     = props.hub_sides   if props.use_hub else "BOTH"
+
+        # Stufenparameter sammeln (immer Stufe 1 = Hauptrad)
+        stages = [
+            {"pitch_radius": props.radius,        "teeth": props.teeth,
+             "thickness": props.thickness,         "pressure_angle": props.pressure_angle},
+        ]
+        if props.use_stack:
+            stages.append({
+                "pitch_radius": props.stack2_radius, "teeth": props.stack2_teeth,
+                "thickness": props.stack2_thickness, "pressure_angle": props.pressure_angle,
+            })
+            if props.stack_count >= 3:
+                stages.append({
+                    "pitch_radius": props.stack3_radius, "teeth": props.stack3_teeth,
+                    "thickness": props.stack3_thickness, "pressure_angle": props.pressure_angle,
+                })
+
+        z = 0.0
+        created = 0
+        for i, stage in enumerate(stages):
+            # Nabe nur auf Aussenstirnflaechen: Stufe 1 Rueckseite, letzte Stufe Vorderseite.
+            if len(stages) == 1:
+                h_sides = hub_s
+            elif i == 0:
+                h_sides = "BACK"
+            elif i == len(stages) - 1:
+                h_sides = "FRONT"
+            else:
+                h_sides = "NONE"  # Mittelstufen: keine Nabe
+
+            if h_sides == "NONE":
+                eff_hub_r = 0.0
+                eff_hub_h = 0.0
+            else:
+                eff_hub_r = hub_r
+                eff_hub_h = hub_h
+
+            try:
+                create_gear_mesh(
+                    pitch_radius=stage["pitch_radius"],
+                    teeth=stage["teeth"],
+                    thickness=stage["thickness"],
+                    pressure_angle_deg=stage["pressure_angle"],
+                    helix_angle_deg=helix_deg,
+                    bore_radius=bore_r,
+                    hole_count=hole_n,
+                    hole_radius=hole_r,
+                    hole_pitch_radius=hole_pr,
+                    hub_radius=eff_hub_r,
+                    hub_height=eff_hub_h,
+                    hub_sides=h_sides,
+                    z_offset=z,
+                )
+            except Exception as exc:
+                self.report({"ERROR"}, f"Stufe {i + 1}: {exc}")
+                return {"CANCELLED"}
+
+            z += stage["thickness"] + (props.stack_z_gap if props.use_stack else 0.0)
+            created += 1
+
+        label = f"Stufenrad ({created} Stufen)" if created > 1 else f"Zahnrad {props.teeth}Z"
+        self.report({"INFO"}, f"{label} erstellt.")
         return {"FINISHED"}
 
 
@@ -526,34 +638,69 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        props = context.scene.gear_generator
+        props  = context.scene.gear_generator
 
+        # Zahnrad
         box = layout.box()
-        box.label(text="Zahnrad")
+        box.label(text="Zahnrad", icon="MESH_CIRCLE")
         box.prop(props, "radius")
         box.prop(props, "teeth")
         box.prop(props, "thickness")
         box.prop(props, "pressure_angle")
 
+        # Schraegverzahnung
         box = layout.box()
-        box.prop(props, "use_helical")
-        sub = box.column()
-        sub.enabled = props.use_helical
-        sub.prop(props, "helix_angle")
+        box.prop(props, "use_helical", icon="MOD_SCREW")
+        col = box.column()
+        col.enabled = props.use_helical
+        col.prop(props, "helix_angle")
 
+        # Nabe
         box = layout.box()
-        box.prop(props, "use_bore")
-        sub = box.column()
-        sub.enabled = props.use_bore
-        sub.prop(props, "bore_radius")
+        box.prop(props, "use_hub", icon="MESH_CYLINDER")
+        col = box.column()
+        col.enabled = props.use_hub
+        col.prop(props, "hub_radius")
+        col.prop(props, "hub_height")
+        col.prop(props, "hub_sides")
 
+        # Zentrische Bohrung
         box = layout.box()
-        box.prop(props, "use_holes")
-        sub = box.column()
-        sub.enabled = props.use_holes
-        sub.prop(props, "hole_count")
-        sub.prop(props, "hole_radius")
-        sub.prop(props, "hole_pitch_radius")
+        box.prop(props, "use_bore", icon="HANDLE_ALIGN")
+        col = box.column()
+        col.enabled = props.use_bore
+        col.prop(props, "bore_radius")
+
+        # Dezentrale Bohrungen
+        box = layout.box()
+        box.prop(props, "use_holes", icon="EMPTY_AXIS")
+        col = box.column()
+        col.enabled = props.use_holes
+        col.prop(props, "hole_count")
+        col.prop(props, "hole_radius")
+        col.prop(props, "hole_pitch_radius")
+
+        # Stacking
+        box = layout.box()
+        box.prop(props, "use_stack", icon="DUPLICATE")
+        col = box.column()
+        col.enabled = props.use_stack
+        col.prop(props, "stack_count")
+        col.prop(props, "stack_z_gap")
+        # Stufe 2
+        sub2 = col.box()
+        sub2.enabled = props.use_stack
+        sub2.label(text="Stufe 2")
+        sub2.prop(props, "stack2_radius")
+        sub2.prop(props, "stack2_teeth")
+        sub2.prop(props, "stack2_thickness")
+        # Stufe 3
+        if props.stack_count >= 3:
+            sub3 = col.box()
+            sub3.label(text="Stufe 3")
+            sub3.prop(props, "stack3_radius")
+            sub3.prop(props, "stack3_teeth")
+            sub3.prop(props, "stack3_thickness")
 
         layout.operator("mesh.create_gear", icon="MESH_CIRCLE")
 
