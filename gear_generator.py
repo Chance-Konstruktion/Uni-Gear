@@ -1,14 +1,15 @@
 import bpy
 import bmesh
 import math
+import mathutils
 
 bl_info = {
     "name": "Uni-Gear",
     "author": "Du + KI-Assistent",
-    "version": (6, 2, 0),
+    "version": (7, 0, 0),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Uni-Gear",
-    "description": "Evolventenzahnrad mit Schraegverzahnung, Nabe, Stacking und Kegelverzahnung.",
+    "description": "Zahnradsimulation mit Innenverzahnung, Kegelverzahnung, DIN-3960 und Paarung.",
     "category": "Add Mesh",
 }
 
@@ -112,112 +113,191 @@ def build_arc(radius, start_angle, end_angle, samples):
     return pts
 
 
-def build_gear_profile(
-    pitch_radius,
-    teeth,
-    pressure_angle_deg,
-    addendum_coeff=1.0,
-    dedendum_coeff=1.25,
-    flank_samples=20,
-    fillet_samples=6,
-    tip_samples=4,
-    root_samples=4,
-):
-    """
-    Erzeugt das geschlossene 2D-Profil eines Evolventen-Zahnrads als geordnete
-    Liste von (x, y)-Punkten gegen den Uhrzeigersinn.
-    """
-    if teeth < 4:
-        raise ValueError("Zaehnezahl muss >= 4 sein.")
-
-    pressure_angle = math.radians(pressure_angle_deg)
-    module = 2.0 * pitch_radius / teeth
-    base_radius = pitch_radius * math.cos(pressure_angle)
-    tip_radius = pitch_radius + addendum_coeff * module
-    root_radius = max(pitch_radius - dedendum_coeff * module, 0.05 * pitch_radius)
-
-    angular_pitch = 2.0 * math.pi / teeth
-    # Halbe Zahndickenwinkel auf dem Teilkreis (Standard ohne Profilverschiebung).
-    half_tooth_at_pitch = math.pi / (2.0 * teeth)
-    # Auf der Symmetrieachse des Zahns liegt die Mitte. Der Polarwinkel der Evolvente
-    # waechst beim Aufwickeln um inv(alpha). Damit der Schnittpunkt mit dem Teilkreis
-    # bei +/- half_tooth_at_pitch liegt, muss die Evolvente um folgenden Wert versetzt sein:
-    flank_offset = half_tooth_at_pitch + inv(pressure_angle)
-
-    # Eine Referenzflanke (rechte Seite) im lokalen Koordinatensystem des Zahns:
-    raw_flank = build_tooth_flank(base_radius, root_radius, tip_radius, flank_samples)
-    raw_fillet = build_root_fillet(raw_flank[0], root_radius, fillet_samples)
-
-    # Rechte Flanke: Evolvente liegt nach Drehung um -flank_offset rechts der Mittelachse.
-    right_flank = [rotate_xy(x, y, -flank_offset) for (x, y) in raw_flank]
-    right_fillet = [rotate_xy(x, y, -flank_offset) for (x, y) in raw_fillet]
-
-    # Linke Flanke: Spiegelung an der Mittelachse (y-Vorzeichen flip).
-    left_flank = [(x, -y) for (x, y) in right_flank]
-    left_fillet = [(x, -y) for (x, y) in right_fillet]
-
-    # Polarwinkel der Flanken-Anschlusspunkte am Fusskreis (fuer Fusskreisbogen).
-    if right_fillet:
-        right_root_pt = right_fillet[-1]
-    else:
-        right_root_pt = right_flank[0]
-    right_root_angle = math.atan2(right_root_pt[1], right_root_pt[0])
-    left_root_angle = -right_root_angle  # Symmetrie
-
-    # Polarwinkel an der Kopfkreis-Anschlussstelle (fuer Kopfkreisbogen).
-    right_tip_angle = math.atan2(right_flank[-1][1], right_flank[-1][0])
-    left_tip_angle = -right_tip_angle
-
-    profile = []
-    for i in range(teeth):
-        center_angle = i * angular_pitch
-        # Anschlussbogen am Fusskreis vom vorherigen Zahn -> rechter Fillet-Anfang.
-        # Negative Indizes funktionieren hier rechnerisch korrekt: fuer i=0 ergibt
-        # (i-1)*angular_pitch ein negativer Startwinkel, der curr_right_root_world
-        # mit dem korrekten Bogen-Span ueberbrueckt.
-        prev_left_root_world = (i - 1) * angular_pitch + left_root_angle
-        curr_right_root_world = center_angle + right_root_angle
-        for x, y in build_arc(root_radius, prev_left_root_world, curr_right_root_world, root_samples):
-            profile.append((x, y))
-
-        # Rechter Fillet (Fuss -> Evolventenstart).
-        for x, y in right_fillet:
-            xr, yr = rotate_xy(x, y, center_angle)
-            profile.append((xr, yr))
-
-        # Rechte Evolventenflanke (Evolventenstart -> Kopf).
-        for x, y in right_flank:
-            xr, yr = rotate_xy(x, y, center_angle)
-            profile.append((xr, yr))
-
-        # Kopfkreisbogen (rechter Kopfpunkt -> linker Kopfpunkt).
-        tip_start = center_angle + right_tip_angle
-        tip_end = center_angle + left_tip_angle
-        for x, y in build_arc(tip_radius, tip_start, tip_end, tip_samples):
-            profile.append((x, y))
-
-        # Linke Evolventenflanke (Kopf -> Evolventenstart, also reversed).
-        for x, y in reversed(left_flank):
-            xr, yr = rotate_xy(x, y, center_angle)
-            profile.append((xr, yr))
-
-        # Linker Fillet (Evolventenstart -> Fuss, also reversed).
-        for x, y in reversed(left_fillet):
-            xr, yr = rotate_xy(x, y, center_angle)
-            profile.append((xr, yr))
-
-    # Adjazente Punkte zusammenfuehren, die durch Sampling/Rundung nahezu zusammenfallen.
+def _clean_profile(profile, pitch_radius):
+    """Adjazente Punkte zusammenfuehren, die durch Sampling/Rundung nahezu zusammenfallen."""
     eps_sq = (1e-6 * pitch_radius) ** 2
     cleaned = [profile[0]]
     for x, y in profile[1:]:
         px, py = cleaned[-1]
         if (x - px) ** 2 + (y - py) ** 2 > eps_sq:
             cleaned.append((x, y))
-    # Auch Schliesskante pruefen: Anfang darf nicht auf Ende fallen.
     if (cleaned[0][0] - cleaned[-1][0]) ** 2 + (cleaned[0][1] - cleaned[-1][1]) ** 2 <= eps_sq:
         cleaned.pop()
+    return cleaned
 
-    return cleaned, root_radius, tip_radius
+
+def build_trochoidal_fillet(pitch_radius, teeth, root_radius, flank_start_pt, fillet_samples=8):
+    """Trochoidaler Zahnfuss-Verlauf (Naeherung des Werkzeug-Rack-Eingriffs)."""
+    ix, iy = flank_start_pt
+    inv_radius = math.hypot(ix, iy)
+    inv_angle  = math.atan2(iy, ix)
+    if inv_radius <= root_radius + 1e-9:
+        return []
+    module    = 2.0 * pitch_radius / teeth
+    r_roll    = pitch_radius
+    pts       = []
+    foot_x    = root_radius * math.cos(inv_angle)
+    foot_y    = root_radius * math.sin(inv_angle)
+    for i in range(1, fillet_samples + 1):
+        u            = i / (fillet_samples + 1)
+        phi          = u * math.pi * 0.5
+        s_radial     = math.sin(phi)
+        s_tangential = 1.0 - math.cos(phi)
+        r_current    = root_radius + (inv_radius - root_radius) * s_radial
+        angle_shift  = s_tangential * (1.25 * module / r_roll) * 0.3
+        ang          = inv_angle + angle_shift
+        pts.append((r_current * math.cos(ang), r_current * math.sin(ang)))
+    return pts
+
+
+def build_gear_profile(
+    pitch_radius,
+    teeth,
+    pressure_angle_deg,
+    addendum_coeff=1.0,
+    dedendum_coeff=1.25,
+    profile_shift=0.0,
+    use_trochoidal=False,
+    flank_samples=20,
+    fillet_samples=6,
+    tip_samples=4,
+    root_samples=4,
+):
+    """
+    Erzeugt das geschlossene 2D-Profil eines Evolventen-Zahnrads.
+
+    profile_shift:  Profilverschiebungsfaktor x (DIN 3960). 0 = Nullrad.
+    use_trochoidal: Trochoidaler Zahnfuss statt einfachem Kreisbogen-Fillet.
+    """
+    if teeth < 4:
+        raise ValueError("Zaehnezahl muss >= 4 sein.")
+
+    pressure_angle = math.radians(pressure_angle_deg)
+    module         = 2.0 * pitch_radius / teeth
+    base_radius    = pitch_radius * math.cos(pressure_angle)
+
+    x          = profile_shift
+    tip_radius  = pitch_radius + (addendum_coeff + x) * module
+    root_radius = max(pitch_radius - (dedendum_coeff - x) * module, 0.05 * pitch_radius)
+
+    angular_pitch    = 2.0 * math.pi / teeth
+    half_tooth_at_pitch = (math.pi / 2.0 + 2.0 * x * math.tan(pressure_angle)) / teeth
+    flank_offset     = half_tooth_at_pitch + inv(pressure_angle)
+
+    raw_flank  = build_tooth_flank(base_radius, root_radius, tip_radius, flank_samples)
+    if use_trochoidal:
+        raw_fillet = build_trochoidal_fillet(pitch_radius, teeth, root_radius, raw_flank[0], fillet_samples)
+    else:
+        raw_fillet = build_root_fillet(raw_flank[0], root_radius, fillet_samples)
+
+    right_flank  = [rotate_xy(x, y, -flank_offset) for (x, y) in raw_flank]
+    right_fillet = [rotate_xy(x, y, -flank_offset) for (x, y) in raw_fillet]
+    left_flank   = [(x, -y) for (x, y) in right_flank]
+    left_fillet  = [(x, -y) for (x, y) in right_fillet]
+
+    right_root_pt    = right_fillet[-1] if right_fillet else right_flank[0]
+    right_root_angle = math.atan2(right_root_pt[1], right_root_pt[0])
+    left_root_angle  = -right_root_angle
+    right_tip_angle  = math.atan2(right_flank[-1][1], right_flank[-1][0])
+    left_tip_angle   = -right_tip_angle
+
+    profile = []
+    for i in range(teeth):
+        center_angle = i * angular_pitch
+        prev_left_root_world = (i - 1) * angular_pitch + left_root_angle
+        curr_right_root_world = center_angle + right_root_angle
+        for px, py in build_arc(root_radius, prev_left_root_world, curr_right_root_world, root_samples):
+            profile.append((px, py))
+        for px, py in right_fillet:
+            xr, yr = rotate_xy(px, py, center_angle)
+            profile.append((xr, yr))
+        for px, py in right_flank:
+            xr, yr = rotate_xy(px, py, center_angle)
+            profile.append((xr, yr))
+        tip_start = center_angle + right_tip_angle
+        tip_end   = center_angle + left_tip_angle
+        for px, py in build_arc(tip_radius, tip_start, tip_end, tip_samples):
+            profile.append((px, py))
+        for px, py in reversed(left_flank):
+            xr, yr = rotate_xy(px, py, center_angle)
+            profile.append((xr, yr))
+        for px, py in reversed(left_fillet):
+            xr, yr = rotate_xy(px, py, center_angle)
+            profile.append((xr, yr))
+
+    return _clean_profile(profile, pitch_radius), root_radius, tip_radius
+
+
+def build_internal_gear_profile(
+    pitch_radius,
+    teeth,
+    pressure_angle_deg,
+    addendum_coeff=1.0,
+    dedendum_coeff=1.25,
+    profile_shift=0.0,
+    flank_samples=20,
+    fillet_samples=6,
+    tip_samples=4,
+    root_samples=4,
+):
+    """
+    Erzeugt das Innenprofil eines Hohlrads (Internal Gear / Ring Gear).
+    Zaehne zeigen nach innen: Kopfkreis < Teilkreis < Fusskreis.
+    """
+    if teeth < 4:
+        raise ValueError("Zaehnezahl muss >= 4 sein.")
+    pressure_angle = math.radians(pressure_angle_deg)
+    module      = 2.0 * pitch_radius / teeth
+    base_radius = pitch_radius * math.cos(pressure_angle)
+    x           = profile_shift
+    tip_radius  = pitch_radius - (addendum_coeff + x) * module
+    root_radius = pitch_radius + (dedendum_coeff - x) * module
+    if tip_radius <= 0.0:
+        raise ValueError("Innenverzahnung: Teilkreisradius zu klein fuer diese Zaehnezahl.")
+
+    angular_pitch      = 2.0 * math.pi / teeth
+    half_space_at_pitch = (math.pi / 2.0 - 2.0 * x * math.tan(pressure_angle)) / teeth
+    flank_offset       = half_space_at_pitch + inv(pressure_angle)
+
+    raw_flank  = build_tooth_flank(base_radius, tip_radius, root_radius, flank_samples)
+    raw_fillet = build_root_fillet(raw_flank[0], tip_radius, fillet_samples)
+
+    right_flank  = [rotate_xy(px, py, flank_offset)  for (px, py) in raw_flank]
+    right_fillet = [rotate_xy(px, py, flank_offset)  for (px, py) in raw_fillet]
+    left_flank   = [(px, -py) for (px, py) in right_flank]
+    left_fillet  = [(px, -py) for (px, py) in right_fillet]
+
+    right_root_angle = math.atan2(right_flank[-1][1], right_flank[-1][0])
+    left_root_angle  = -right_root_angle
+    right_tip_pt     = right_fillet[-1] if right_fillet else right_flank[0]
+    right_tip_angle  = math.atan2(right_tip_pt[1], right_tip_pt[0])
+    left_tip_angle   = -right_tip_angle
+
+    profile = []
+    for i in range(teeth):
+        center_angle = i * angular_pitch
+        prev_left_root_world  = (i - 1) * angular_pitch + left_root_angle
+        curr_right_root_world = center_angle + right_root_angle
+        for px, py in build_arc(root_radius, prev_left_root_world, curr_right_root_world, root_samples):
+            profile.append((px, py))
+        for px, py in reversed(right_flank):
+            xr, yr = rotate_xy(px, py, center_angle)
+            profile.append((xr, yr))
+        for px, py in reversed(right_fillet):
+            xr, yr = rotate_xy(px, py, center_angle)
+            profile.append((xr, yr))
+        tip_start = center_angle + right_tip_angle
+        tip_end   = center_angle + left_tip_angle
+        for px, py in build_arc(tip_radius, tip_start, tip_end, tip_samples):
+            profile.append((px, py))
+        for px, py in left_fillet:
+            xr, yr = rotate_xy(px, py, center_angle)
+            profile.append((xr, yr))
+        for px, py in left_flank:
+            xr, yr = rotate_xy(px, py, center_angle)
+            profile.append((xr, yr))
+
+    return _clean_profile(profile, pitch_radius), root_radius, tip_radius
 
 
 # ================================================================
@@ -283,17 +363,23 @@ def create_gear_mesh(
     hub_height=0.0,
     hub_sides="BOTH",
     z_offset=0.0,
+    profile_shift=0.0,
+    use_trochoidal=False,
+    x_offset=0.0,
+    phase_offset=0.0,
 ):
     """Erstellt ein vollstaendiges 3D-Mesh eines Evolventen-Zahnrads.
 
-    Optional: Schraegverzahnung, zentrische Bohrung, dezentrale Bohrungen,
-    und eine Nabe (Hub) auf einer oder beiden Stirnseiten.
-    z_offset verschiebt das fertige Objekt entlang Z (fuer Stacking).
+    profile_shift:  Profilverschiebungsfaktor x (DIN 3960).
+    use_trochoidal: Trochoidaler Zahnfuss (DIN 3960).
+    z_offset:       Verschiebung entlang Z (fuer Stacking).
     """
     profile_2d, root_radius, _tip_radius = build_gear_profile(
         pitch_radius=pitch_radius,
         teeth=teeth,
         pressure_angle_deg=pressure_angle_deg,
+        profile_shift=profile_shift,
+        use_trochoidal=use_trochoidal,
     )
 
     has_hub_back  = hub_radius > 0.0 and hub_height > 0.0 and hub_sides in ("BOTH", "BACK")
@@ -403,35 +489,131 @@ def create_gear_mesh(
             hole_tops.append(rt)
 
     # --- Stirnflaechen (triangle_fill) ---
-    # Die innere Grenze der Zahnrad-Stirnflaeche ist die Nabe (falls vorhanden)
-    # oder die Bohrung; nicht beides gleichzeitig (Nabe umschliesst die Bohrung).
-    def _fill_cap(outer_loop, inner_ring, extra_holes):
+    # normal_z_sign: +1 erwartet Normalen in +Z, -1 in -Z.
+    # triangle_fill erzeugt Flaechen mit unbekannter Wicklung; wir pruefen die
+    # erste neue Flaeche und flippen alle, falls noetig. Dadurch wird der "unten
+    # offene" Bug (Normalen zeigen innen) zuverlaessig behoben.
+    def _fill_cap(outer_loop, inner_ring, extra_holes, normal_z_sign=0):
         loops = [outer_loop]
         if inner_ring is not None:
             loops.append(inner_ring)
         loops.extend(extra_holes)
-        bmesh.ops.triangle_fill(bm, edges=_collect_loop_edges(bm, loops), use_beauty=True)
+        result    = bmesh.ops.triangle_fill(bm, edges=_collect_loop_edges(bm, loops), use_beauty=True)
+        new_faces = result.get('faces', [])
+        if normal_z_sign and new_faces:
+            if normal_z_sign * new_faces[0].normal.z < 0:
+                bmesh.ops.reverse_faces(bm, faces=new_faces)
 
-    # Zahnrad-Rueckseite (z=0)
+    # Zahnrad-Rueckseite (z=0): Normalen zeigen in -Z
     inner_back = hub_back_top if has_hub_back else bore_rings.get(0.0)
-    _fill_cap(outer_bottom, inner_back, hole_bottoms)
+    _fill_cap(outer_bottom, inner_back, hole_bottoms, normal_z_sign=-1)
 
-    # Zahnrad-Vorderseite (z=thickness)
+    # Zahnrad-Vorderseite (z=thickness): Normalen zeigen in +Z
     inner_front = hub_front_bot if has_hub_front else bore_rings.get(thickness)
-    _fill_cap(outer_top, inner_front, hole_tops)
+    _fill_cap(outer_top, inner_front, hole_tops, normal_z_sign=+1)
 
-    # Naben-Rueckseite (z=-hub_height) — Kreisring oder Vollkreis
+    # Naben-Rueckseite (z=-hub_height): Normalen zeigen in -Z
     if has_hub_back:
-        _fill_cap(hub_back_bot, bore_rings.get(bore_z_start), [])
+        _fill_cap(hub_back_bot, bore_rings.get(bore_z_start), [], normal_z_sign=-1)
 
-    # Naben-Vorderseite (z=thickness+hub_height)
+    # Naben-Vorderseite (z=thickness+hub_height): Normalen zeigen in +Z
     if has_hub_front:
-        _fill_cap(hub_front_top, bore_rings.get(bore_z_end), [])
+        _fill_cap(hub_front_top, bore_rings.get(bore_z_end), [], normal_z_sign=+1)
 
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
 
-    if z_offset != 0.0:
-        bmesh.ops.translate(bm, vec=(0.0, 0.0, z_offset), verts=bm.verts[:])
+    if phase_offset != 0.0:
+        bmesh.ops.rotate(bm, verts=bm.verts[:],
+                         cent=(0, 0, 0),
+                         matrix=mathutils.Matrix.Rotation(phase_offset, 3, "Z"))
+    if x_offset != 0.0 or z_offset != 0.0:
+        bmesh.ops.translate(bm, vec=(x_offset, 0.0, z_offset), verts=bm.verts[:])
+
+    bm.to_mesh(mesh)
+    bm.free()
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    return obj
+
+
+# ================================================================
+# HOHLRAD (Internal Gear / Ring Gear)
+# ================================================================
+
+def create_internal_gear_mesh(
+    pitch_radius,
+    teeth,
+    thickness,
+    pressure_angle_deg,
+    ring_outer_radius,
+    helix_angle_deg=0.0,
+    z_offset=0.0,
+    profile_shift=0.0,
+    x_offset=0.0,
+):
+    """Erstellt ein Hohlrad (Ring Gear) mit nach innen zeigenden Zaehnen.
+
+    ring_outer_radius: Aussenradius des Ringkoerpers (muss > Fusskreis).
+    """
+    profile_2d, root_radius_int, _tip_radius_int = build_internal_gear_profile(
+        pitch_radius=pitch_radius,
+        teeth=teeth,
+        pressure_angle_deg=pressure_angle_deg,
+        profile_shift=profile_shift,
+    )
+
+    if ring_outer_radius <= root_radius_int * 1.02:
+        raise ValueError(
+            f"Ring-Aussenradius ({ring_outer_radius*1000:.1f} mm) muss groesser als "
+            f"Fusskreis der Innenverzahnung ({root_radius_int*1000:.1f} mm) sein.")
+
+    helix_angle = math.radians(helix_angle_deg)
+    layers      = _compute_helix_layers(thickness, helix_angle, pitch_radius)
+
+    def _segs_for_r(r):
+        return max(32, min(128, int(2.0 * math.pi * r / (0.005 * pitch_radius)) + 16))
+
+    mesh = bpy.data.meshes.new("Hohlrad")
+    obj  = bpy.data.objects.new("Hohlrad", mesh)
+    bpy.context.collection.objects.link(obj)
+    bm   = bmesh.new()
+
+    tan_helix = math.tan(helix_angle)
+
+    inner_layers = []
+    for k in range(layers + 1):
+        z       = thickness * k / layers
+        phi     = z * tan_helix / pitch_radius
+        cos_phi = math.cos(phi)
+        sin_phi = math.sin(phi)
+        inner_layers.append([
+            bm.verts.new((x * cos_phi - y * sin_phi, x * sin_phi + y * cos_phi, z))
+            for (x, y) in profile_2d
+        ])
+    for k in range(layers):
+        _bridge_rings(bm, inner_layers[k], inner_layers[k + 1], reverse_winding=True)
+    inner_bottom = inner_layers[0]
+    inner_top    = inner_layers[-1]
+
+    ring_segs   = _segs_for_r(ring_outer_radius)
+    ring_bottom = _add_circle_layer(bm, 0.0, 0.0, 0.0,       ring_outer_radius, ring_segs)
+    ring_top    = _add_circle_layer(bm, 0.0, 0.0, thickness,  ring_outer_radius, ring_segs)
+    _bridge_rings(bm, ring_bottom, ring_top)
+
+    def _fill_ring_cap(outer_loop, inner_loop, normal_z_sign):
+        result    = bmesh.ops.triangle_fill(
+            bm, edges=_collect_loop_edges(bm, [outer_loop, inner_loop]), use_beauty=True)
+        new_faces = result.get('faces', [])
+        if new_faces and normal_z_sign * new_faces[0].normal.z < 0:
+            bmesh.ops.reverse_faces(bm, faces=new_faces)
+
+    _fill_ring_cap(ring_bottom, inner_bottom, normal_z_sign=-1)
+    _fill_ring_cap(ring_top,    inner_top,    normal_z_sign=+1)
+
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+
+    if x_offset != 0.0 or z_offset != 0.0:
+        bmesh.ops.translate(bm, vec=(x_offset, 0.0, z_offset), verts=bm.verts[:])
 
     bm.to_mesh(mesh)
     bm.free()
@@ -593,8 +775,8 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     # --- Basisgeometrie ---
     # UI arbeitet mit Durchmessern; die interne Berechnung nutzt weiterhin Radien.
     pitch_diameter: bpy.props.FloatProperty(
-        name="Teilkreisdurchmesser",
-        description="Durchmesser des Teilkreises",
+        name="Zahnraddurchmesser",
+        description="Aussendurchmesser des Zahnrads (Teilkreis). Im DIN-Modus automatisch berechnet.",
         default=0.020, min=0.002, max=2.0, unit="LENGTH",
     )
     teeth: bpy.props.IntProperty(
@@ -706,7 +888,7 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     )
     # Stufe 2
     stack2_pitch_diameter: bpy.props.FloatProperty(
-        name="Teilkreisdurchmesser", default=0.015, min=0.002, max=2.0, unit="LENGTH",
+        name="Zahnraddurchmesser", default=0.015, min=0.002, max=2.0, unit="LENGTH",
     )
     stack2_teeth: bpy.props.IntProperty(name="Zaehnezahl", default=16, min=6, max=200)
     stack2_thickness: bpy.props.FloatProperty(
@@ -714,11 +896,65 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     )
     # Stufe 3
     stack3_pitch_diameter: bpy.props.FloatProperty(
-        name="Teilkreisdurchmesser", default=0.010, min=0.002, max=2.0, unit="LENGTH",
+        name="Zahnraddurchmesser", default=0.010, min=0.002, max=2.0, unit="LENGTH",
     )
     stack3_teeth: bpy.props.IntProperty(name="Zaehnezahl", default=10, min=6, max=200)
     stack3_thickness: bpy.props.FloatProperty(
         name="Dicke", default=0.005, min=0.0001, max=1.0, unit="LENGTH",
+    )
+
+    # --- Innenverzahnung (Hohlrad) ---
+    use_internal: bpy.props.BoolProperty(
+        name="Innenverzahnung (Hohlrad)",
+        description="Erzeugt ein Hohlrad (Innenverzahnung) statt eines Aussen-Stirnrads",
+        default=False,
+    )
+    internal_ring_diameter: bpy.props.FloatProperty(
+        name="Ring-Aussendurchmesser",
+        description="Aussendurchmesser des Hohlrad-Rings (muss groesser als Zahnraddurchmesser sein)",
+        default=0.030, min=0.004, max=2.0, unit="LENGTH",
+    )
+
+    # --- DIN-3960-Modus ---
+    use_din3960: bpy.props.BoolProperty(
+        name="DIN-3960-Modus",
+        description="Genormtes Modul (DIN 780) und Profilverschiebung x aktivieren",
+        default=False,
+    )
+    din_module: bpy.props.EnumProperty(
+        name="Modul (DIN 780)",
+        description="Normmodul nach DIN 780 – bestimmt Zahngroesse und Teilkreisdurchmesser",
+        items=[
+            ("0.5",  "m = 0,5",  ""), ("0.6",  "m = 0,6",  ""), ("0.7",  "m = 0,7",  ""),
+            ("0.8",  "m = 0,8",  ""), ("1.0",  "m = 1,0",  ""), ("1.25", "m = 1,25", ""),
+            ("1.5",  "m = 1,5",  ""), ("2.0",  "m = 2,0",  ""), ("2.5",  "m = 2,5",  ""),
+            ("3.0",  "m = 3,0",  ""), ("4.0",  "m = 4,0",  ""), ("5.0",  "m = 5,0",  ""),
+            ("6.0",  "m = 6,0",  ""), ("8.0",  "m = 8,0",  ""), ("10.0", "m = 10,0", ""),
+        ],
+        default="1.0",
+    )
+    din_profile_shift: bpy.props.FloatProperty(
+        name="Profilverschiebung x",
+        description="Profilverschiebungsfaktor (DIN 3960). 0 = Normverzahnung",
+        default=0.0, min=-0.8, max=0.8, step=5,
+    )
+
+    # --- Zahnrad-Paarung ---
+    use_pairing: bpy.props.BoolProperty(
+        name="Zahnrad-Paarung",
+        description="Ein passendes Gegenrad auf dem korrekten Achsabstand erzeugen",
+        default=False,
+    )
+    pair_teeth: bpy.props.IntProperty(
+        name="Zaehnezahl Gegenrad", default=16, min=6, max=200,
+    )
+    pair_thickness: bpy.props.FloatProperty(
+        name="Dicke Gegenrad", default=0.005, min=0.0001, max=1.0, unit="LENGTH",
+    )
+    pair_internal: bpy.props.BoolProperty(
+        name="Gegenrad als Hohlrad",
+        description="Gegenrad als Innenverzahnung (Hauptrad wird dann als Ritzel im Hohlrad platziert)",
+        default=False,
     )
 
 
@@ -734,9 +970,16 @@ class MESH_OT_create_gear(bpy.types.Operator):
     def execute(self, context):
         props = context.scene.gear_generator
 
-        # Kegelrad-Pfad: separater Builder, ignoriert inkompatible Optionen.
         # UI-Werte sind Durchmesser; interne Berechnung erwartet Radien -> halbieren.
         pitch_r = props.pitch_diameter * 0.5
+
+        # DIN-3960: Modul bestimmt Teilkreis; pitch_diameter wird ueberschrieben.
+        profile_shift = 0.0
+        if props.use_din3960:
+            m_mm = float(props.din_module)
+            m = m_mm * 0.001  # Blender-Einheit = 1 m
+            pitch_r = m * props.teeth / 2.0
+            profile_shift = props.din_profile_shift
 
         if props.use_bevel:
             spiral_deg = props.spiral_angle if props.use_spiral_bevel else 0.0
@@ -756,6 +999,47 @@ class MESH_OT_create_gear(bpy.types.Operator):
                 return {"CANCELLED"}
             kind = "Spiralkegelrad" if props.use_spiral_bevel else "Kegelrad"
             self.report({"INFO"}, f"{kind} {props.teeth}Z erstellt.")
+            return {"FINISHED"}
+
+        # --- Innenverzahnung (Hohlrad) ---
+        if props.use_internal:
+            ring_outer_r = props.internal_ring_diameter * 0.5
+            bore_r_int   = (props.bore_diameter * 0.5) if props.use_bore else 0.0
+            helix_int    = props.helix_angle if props.use_helical else 0.0
+            try:
+                create_internal_gear_mesh(
+                    pitch_radius=pitch_r,
+                    teeth=props.teeth,
+                    thickness=props.thickness,
+                    pressure_angle_deg=props.pressure_angle,
+                    ring_outer_radius=ring_outer_r,
+                    helix_angle_deg=helix_int,
+                    profile_shift=profile_shift,
+                )
+            except Exception as exc:
+                self.report({"ERROR"}, f"Hohlrad: {exc}")
+                return {"CANCELLED"}
+
+            # --- optional: passendes Ritzel dazu erzeugen ---
+            if props.use_pairing:
+                pair_r = pitch_r * props.pair_teeth / props.teeth
+                center_dist = pitch_r - pair_r  # Inneneingriff: a = r_ring - r_ritzel
+                helix_pair  = props.helix_angle if props.use_helical else 0.0
+                try:
+                    create_gear_mesh(
+                        pitch_radius=pair_r,
+                        teeth=props.pair_teeth,
+                        thickness=props.pair_thickness,
+                        pressure_angle_deg=props.pressure_angle,
+                        helix_angle_deg=helix_pair,
+                        bore_radius=0.0,
+                        x_offset=center_dist,
+                    )
+                except Exception as exc:
+                    self.report({"ERROR"}, f"Paarung-Ritzel: {exc}")
+                    return {"CANCELLED"}
+
+            self.report({"INFO"}, f"Hohlrad {props.teeth}Z erstellt.")
             return {"FINISHED"}
 
         helix_deg = props.helix_angle if props.use_helical else 0.0
@@ -822,6 +1106,7 @@ class MESH_OT_create_gear(bpy.types.Operator):
                     hub_height=eff_hub_h,
                     hub_sides=h_sides,
                     z_offset=z,
+                    profile_shift=profile_shift,
                 )
             except Exception as exc:
                 self.report({"ERROR"}, f"Stufe {i + 1}: {exc}")
@@ -829,6 +1114,43 @@ class MESH_OT_create_gear(bpy.types.Operator):
 
             z += stage["thickness"] + (props.stack_z_gap if props.use_stack else 0.0)
             created += 1
+
+        # --- Zahnrad-Paarung: Gegenrad neben dem Hauptrad erzeugen ---
+        if props.use_pairing and not props.use_stack:
+            pair_r = pitch_r * props.pair_teeth / props.teeth
+            if props.pair_internal:
+                # Hauptrad sitzt als Ritzel im Hohlrad -> Hohlrad am selben Ort
+                ring_outer_r = pitch_r + (pitch_r - pair_r) * 1.5
+                try:
+                    create_internal_gear_mesh(
+                        pitch_radius=pitch_r,
+                        teeth=props.pair_teeth,
+                        thickness=props.pair_thickness,
+                        pressure_angle_deg=props.pressure_angle,
+                        ring_outer_radius=ring_outer_r,
+                        helix_angle_deg=helix_deg,
+                        profile_shift=0.0,
+                        x_offset=pitch_r + pair_r,
+                    )
+                except Exception as exc:
+                    self.report({"ERROR"}, f"Paarung-Hohlrad: {exc}")
+                    return {"CANCELLED"}
+            else:
+                center_dist = pitch_r + pair_r
+                try:
+                    create_gear_mesh(
+                        pitch_radius=pair_r,
+                        teeth=props.pair_teeth,
+                        thickness=props.pair_thickness,
+                        pressure_angle_deg=props.pressure_angle,
+                        helix_angle_deg=helix_deg,
+                        bore_radius=0.0,
+                        x_offset=center_dist,
+                        phase_offset=math.pi / props.pair_teeth,
+                    )
+                except Exception as exc:
+                    self.report({"ERROR"}, f"Paarung: {exc}")
+                    return {"CANCELLED"}
 
         label = f"Stufenrad ({created} Stufen)" if created > 1 else f"Zahnrad {props.teeth}Z"
         self.report({"INFO"}, f"{label} erstellt.")
@@ -844,8 +1166,6 @@ def _panel_gear_props(context):
 
 
 class VIEW3D_PT_gear_generator(bpy.types.Panel):
-    """Hauptpanel: Basis-Parameter + der "Zahnrad erstellen"-Button ganz oben,
-    damit er bei langem Panelinhalt immer sichtbar bleibt."""
     bl_label = "Uni-Gear"
     bl_idname = "VIEW3D_PT_gear_generator"
     bl_space_type = "VIEW_3D"
@@ -856,16 +1176,19 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
         layout = self.layout
         props  = _panel_gear_props(context)
 
-        # Erstellen-Button ganz oben, gross und immer sichtbar.
-        row = layout.row()
-        row.scale_y = 1.6
-        row.operator("mesh.create_gear", icon="MESH_CIRCLE", text="Zahnrad erstellen")
-
-        layout.separator()
-
         box = layout.box()
         box.label(text="Zahnrad", icon="MESH_CIRCLE")
-        box.prop(props, "pitch_diameter")
+
+        # Im DIN-Modus: Durchmesser ist read-only (aus Modul berechnet).
+        if props.use_din3960:
+            m_mm = float(props.din_module)
+            d_mm = m_mm * props.teeth
+            row = box.row()
+            row.enabled = False
+            row.label(text=f"Zahnraddurchmesser: {d_mm:.2f} mm")
+        else:
+            box.prop(props, "pitch_diameter")
+
         box.prop(props, "teeth")
         box.prop(props, "thickness")
         box.prop(props, "pressure_angle")
@@ -996,6 +1319,95 @@ class VIEW3D_PT_gear_stack(_GearSubPanel):
             sub3.prop(props, "stack3_thickness")
 
 
+class VIEW3D_PT_gear_din3960(_GearSubPanel):
+    bl_label    = "DIN-3960-Modus"
+    bl_idname   = "VIEW3D_PT_gear_din3960"
+    toggle_prop = "use_din3960"
+
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
+        col.enabled = props.use_din3960
+        col.prop(props, "din_module")
+        col.prop(props, "din_profile_shift")
+
+        # Berechneter Durchmesser als Info-Label
+        if props.use_din3960:
+            m_mm = float(props.din_module)
+            d_mm = m_mm * props.teeth
+            col.label(text=f"→ Zahnraddurchmesser: {d_mm:.2f} mm", icon="INFO")
+            # Unterschnitt-Warnung
+            alpha = math.radians(props.pressure_angle)
+            z_min = 2.0 / math.sin(alpha) ** 2
+            x_min = (z_min - props.teeth) / z_min
+            if props.teeth < z_min and props.din_profile_shift < x_min:
+                col.label(text=f"⚠ Unterschnitt! x_min ≈ {x_min:.2f}", icon="ERROR")
+
+
+class VIEW3D_PT_gear_internal(_GearSubPanel):
+    bl_label    = "Innenverzahnung (Hohlrad)"
+    bl_idname   = "VIEW3D_PT_gear_internal"
+    toggle_prop = "use_internal"
+    requires_cyl = True
+
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
+        col.enabled = props.use_internal and not props.use_bevel
+        col.prop(props, "internal_ring_diameter")
+
+
+class VIEW3D_PT_gear_pairing(_GearSubPanel):
+    bl_label    = "Zahnrad-Paarung"
+    bl_idname   = "VIEW3D_PT_gear_pairing"
+    toggle_prop = "use_pairing"
+    requires_cyl = True
+
+    def draw(self, context):
+        layout = self.layout
+        props  = _panel_gear_props(context)
+        col = layout.column()
+        col.enabled = props.use_pairing and not props.use_bevel
+        col.prop(props, "pair_teeth")
+        col.prop(props, "pair_thickness")
+        col.prop(props, "pair_internal")
+
+        # Achsabstand als Info
+        if props.use_pairing and not props.use_bevel:
+            if props.use_din3960:
+                m_mm = float(props.din_module)
+                m = m_mm * 0.001
+                r1 = m * props.teeth / 2.0
+            else:
+                r1 = props.pitch_diameter * 0.5
+            r2 = r1 * props.pair_teeth / props.teeth
+            if props.pair_internal:
+                a_mm = abs(r1 - r2) * 1000.0
+                col.label(text=f"→ Achsabstand: {a_mm:.2f} mm (Inneneingriff)", icon="INFO")
+            else:
+                a_mm = (r1 + r2) * 1000.0
+                col.label(text=f"→ Achsabstand: {a_mm:.2f} mm", icon="INFO")
+
+
+class VIEW3D_PT_gear_footer(bpy.types.Panel):
+    """Footer-Panel: Erstellen-Button immer am Ende aller Sub-Panels sichtbar."""
+    bl_label    = ""
+    bl_idname   = "VIEW3D_PT_gear_footer"
+    bl_space_type  = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category    = "Uni-Gear"
+    bl_parent_id   = "VIEW3D_PT_gear_generator"
+    bl_options     = {"HIDE_HEADER"}
+    bl_order       = 999  # ganz nach unten sortiert
+
+    def draw(self, context):
+        row = self.layout.row()
+        row.scale_y = 1.6
+        row.operator("mesh.create_gear", icon="MESH_CIRCLE", text="Zahnrad erstellen")
+
+
 # ================================================================
 # REGISTRATION
 # ================================================================
@@ -1010,6 +1422,10 @@ _classes = (
     VIEW3D_PT_gear_bore,
     VIEW3D_PT_gear_holes,
     VIEW3D_PT_gear_stack,
+    VIEW3D_PT_gear_din3960,
+    VIEW3D_PT_gear_internal,
+    VIEW3D_PT_gear_pairing,
+    VIEW3D_PT_gear_footer,
 )
 
 

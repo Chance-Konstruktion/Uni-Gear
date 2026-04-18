@@ -11,16 +11,19 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 
 ## ✨ Features
 
-- ✅ Voll parametrisch: Teilkreisdurchmesser, Zähnezahl, Dicke, Eingriffswinkel
+- ✅ Voll parametrisch: Zahnraddurchmesser, Zähnezahl, Dicke, Eingriffswinkel
 - ✅ Echte Evolventenverzahnung nach DIN-867-Bezugsprofil (`h_aP* = 1.0`, `h_fP* = 1.25`)
 - ✅ Korrekte Teilkreis-Zahndicke `π·m/2` per `inv(α) = tan(α) − α`
-- ✅ Tangential geblendeter Kreisbogen-Fillet am Zahnfuß
+- ✅ Tangential geblendeter Kreisbogen-Fillet am Zahnfuß (trochoidale Näherung)
 - ✅ Optionale Schrägverzahnung mit einstellbarem Schrägungswinkel
 - ✅ Optionale Nabe (Hub) – ein- oder beidseitig
 - ✅ Optionale zentrische Bohrung (durchgehend durch Nabe und Kegel)
 - ✅ Optionale dezentrale Entlastungs-/Befestigungsbohrungen (Anzahl, Radius, Lochkreis)
 - ✅ Stufenrad / Stacking: bis zu 3 Zahnradstufen auf einer Achse
 - ✅ Kegelverzahnung (Bevel Gear) – gerad- und spiralverzahnt
+- ✅ Innenverzahnung (Hohlrad / Ring Gear)
+- ✅ DIN-3960-Modus: Normmodul (DIN 780), Profilverschiebung `x`, Unterschnitt-Warnung
+- ✅ Zahnrad-Paarung: Gegenrad automatisch auf korrektem Achsabstand
 - ✅ Eigene GUI im N-Panel (Tab „Uni-Gear") mit erhaltener Einstellung
 - ✅ Ein-Klick-Erstellung mit Undo-Support
 - ✅ Sauberer Blender-Python-Code (bmesh)
@@ -53,7 +56,7 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 | Parameter              | Beschreibung                          | Standardwert |
 |------------------------|---------------------------------------|--------------|
-| Teilkreisdurchmesser   | Durchmesser des Teilkreises           | 20 mm        |
+| Zahnraddurchmesser     | Teilkreisdurchmesser des Zahnrads     | 20 mm        |
 | Zähnezahl              | Anzahl der Zähne                      | 24           |
 | Dicke                  | Zahnbreite (axiale Dicke)             | 5 mm         |
 | Eingriffswinkel        | Druckwinkel in Grad                   | 20°          |
@@ -106,6 +109,30 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 > Hinweis: Im Kegelrad-Modus sind Schrägverzahnung, Nabe, dezentrale Bohrungen und
 > Stacking deaktiviert. Eine zentrische Bohrung kann zusätzlich eingeschaltet werden.
 
+### Innenverzahnung – Hohlrad (optional)
+
+| Parameter              | Beschreibung                                                   | Standardwert |
+|------------------------|----------------------------------------------------------------|--------------|
+| Ring-Außendurchmesser  | Außendurchmesser des Hohlrad-Rings (> Zahnraddurchmesser)     | 30 mm        |
+
+### DIN-3960-Modus (optional)
+
+| Parameter            | Beschreibung                                                           | Standardwert |
+|----------------------|------------------------------------------------------------------------|--------------|
+| Modul (DIN 780)      | Normmodul m – bestimmt Zahnraddurchmesser: d = m · z                  | 1,0 mm       |
+| Profilverschiebung x | Profilverschiebungsfaktor nach DIN 3960 (0 = Normverzahnung)          | 0,0          |
+
+> Im DIN-Modus wird der Zahnraddurchmesser automatisch aus Modul und Zähnezahl berechnet.
+> Das Panel zeigt eine Unterschnitt-Warnung, wenn x < x_min für die gewählte Zähnezahl.
+
+### Zahnrad-Paarung (optional)
+
+| Parameter          | Beschreibung                                                    | Standardwert |
+|--------------------|-----------------------------------------------------------------|--------------|
+| Zähnezahl Gegenrad | Zähnezahl des automatisch erzeugten Gegenrads                  | 16           |
+| Dicke Gegenrad     | Axiale Dicke des Gegenrads                                      | 5 mm         |
+| Gegenrad als Hohlrad | Gegenrad als Innenverzahnung erzeugen                         | aus          |
+
 ## Roadmap (nächste Versionen)
 
 Erledigt:
@@ -116,12 +143,19 @@ Erledigt:
 - [x] Nabe (Hub) – ein- oder beidseitig, kombinierbar mit der Bohrung
 - [x] Zahnradkombination / Stacking (mehrere Räder auf einer Achse, z. B. Stufenräder)
 - [x] Kegelverzahnung (Bevel Gear, gerad- und spiralverzahnt)
+- [x] Innenverzahnung (Hohlrad / Ring Gear)
+- [x] DIN-3960-Modus: Normmodul (DIN 780), Profilverschiebung `x`, Unterschnitt-Warnung
+- [x] Zahnrad-Paarung (Gegenrad auf korrektem Achsabstand)
 
 Offen:
 
-- [ ] Innenverzahnung (Internal Gear / Hohlrad)
-- [ ] Zahnrad-Paarung (zwei Räder passend zueinander, inkl. Achsabstand)
-- [ ] DIN-3960-Modus: Modul-Dropdown (DIN 780), Profilverschiebung `x`, echte Trochoide am Zahnfuß, Unterschnitt-Warnung
+- [ ] Flankenspiel (Backlash)
+- [ ] Zahnstange (Rack)
+- [ ] Automatisches Rigging (Rotation via Driver)
+- [ ] Modul-Eingabe als Freitexteingabe (zusätzlich zum DIN-Dropdown)
+- [ ] Vorschau-Modus (Modal Operator mit Live-Preview)
+- [ ] Negative Nabe (Nabentasche im Zahnradkörper)
+- [ ] Echte Trochoide am Zahnfuß (DIN 3960 vollständig)
 
 ## Mitwirken
 
