@@ -84,11 +84,12 @@ The gear is created directly as a new object in the scene.
 
 ### Hub (optional)
 
-| Parameter     | Description                                       | Default    |
-|---------------|---------------------------------------------------|------------|
-| Hub diameter  | Outer diameter of the cylindrical hub             | 16 mm      |
-| Hub height    | How far the hub protrudes past the face           | 4 mm       |
-| Side          | Both sides / back only / front only               | Both sides |
+| Parameter     | Description                                               | Default    |
+|---------------|-----------------------------------------------------------|------------|
+| Hub diameter  | Outer diameter of the cylindrical hub                     | 16 mm      |
+| Hub height    | Protrusion or pocket depth of the hub                     | 4 mm       |
+| Side          | Both sides / back only / front only                       | Both sides |
+| Negative hub  | Hub as a pocket carved into the gear body (not protrusion)| off        |
 
 ### Stepped gear / stacking (optional)
 
@@ -128,11 +129,13 @@ The gear is created directly as a new object in the scene.
 
 ### Gear pairing (optional)
 
-| Parameter          | Description                                                     | Default |
-|--------------------|-----------------------------------------------------------------|---------|
-| Counter-gear teeth | Tooth count of the automatically generated counter-gear        | 16      |
-| Counter-gear thickness | Axial thickness of the counter-gear                        | 5 mm    |
-| Counter-gear as ring gear | Generate counter-gear as internal gear               | off     |
+| Parameter                 | Description                                                | Default |
+|---------------------------|------------------------------------------------------------|---------|
+| Counter-gear teeth        | Tooth count of the automatically generated counter-gear   | 16      |
+| Counter-gear thickness    | Axial thickness of the counter-gear                        | 5 mm    |
+| Counter-gear as ring gear | Generate counter-gear as internal gear                     | off     |
+| Bore on counter-gear      | Central bore on the counter-gear (configurable diameter)   | off     |
+| Hub on counter-gear       | Hub on the counter-gear (diameter, height, side, negative) | off     |
 
 ## Roadmap
 
@@ -146,7 +149,8 @@ Done:
 - [x] Bevel gears (straight- and spiral-toothed)
 - [x] Internal gears (ring gears)
 - [x] DIN-3960 mode: standard module (DIN 780), profile shift `x`, undercut warning
-- [x] Gear pairing (counter-gear at correct center distance)
+- [x] Gear pairing (counter-gear at correct center distance, incl. bore/hub on counter-gear)
+- [x] Negative hub (hub pocket inside the gear body)
 
 Open:
 
@@ -155,7 +159,6 @@ Open:
 - [ ] Automatic rigging (rotation via driver)
 - [ ] Free-text module input (in addition to DIN dropdown)
 - [ ] Preview mode (Modal Operator with live preview)
-- [ ] Negative hub (hub pocket inside the gear body)
 - [ ] True trochoidal root fillet (full DIN 3960)
 
 ## Contributing
