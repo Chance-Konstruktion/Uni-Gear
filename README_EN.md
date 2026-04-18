@@ -12,16 +12,19 @@ Ideal for mechanical design, 3D printing, animation, technical visualization and
 
 ## ✨ Features
 
-- ✅ Fully parametric: pitch diameter, tooth count, thickness, pressure angle
+- ✅ Fully parametric: gear diameter, tooth count, thickness, pressure angle
 - ✅ True involute teeth per DIN-867 reference profile (`h_aP* = 1.0`, `h_fP* = 1.25`)
 - ✅ Correct pitch-circle tooth thickness `π·m/2` via `inv(α) = tan(α) − α`
-- ✅ Tangentially blended circular-arc fillet at the tooth root
+- ✅ Tangentially blended trochoidal fillet at the tooth root
 - ✅ Optional helical teeth with adjustable helix angle
 - ✅ Optional hub – on one or both faces
 - ✅ Optional central bore (passes through hub and cone)
 - ✅ Optional decentral relief / mounting holes (count, diameter, hole circle)
 - ✅ Stepped gear / stacking: up to 3 gear stages on a shared axis
 - ✅ Bevel gears – straight- and spiral-toothed
+- ✅ Internal gears (ring gears / Hohlrad)
+- ✅ DIN-3960 mode: standard module (DIN 780), profile shift `x`, undercut warning
+- ✅ Gear pairing: counter-gear automatically placed at correct center distance
 - ✅ Dedicated N-panel GUI (tab "Uni-Gear") with persistent settings
 - ✅ One-click creation with full undo support
 - ✅ Clean Blender Python code (bmesh)
@@ -54,7 +57,7 @@ The gear is created directly as a new object in the scene.
 
 | Parameter        | Description                    | Default |
 |------------------|--------------------------------|---------|
-| Pitch diameter   | Pitch-circle diameter          | 20 mm   |
+| Gear diameter    | Pitch-circle diameter          | 20 mm   |
 | Tooth count      | Number of teeth                | 24      |
 | Thickness        | Axial face width               | 5 mm    |
 | Pressure angle   | Pressure angle in degrees      | 20°     |
@@ -107,6 +110,30 @@ The gear is created directly as a new object in the scene.
 > Note: In bevel mode, helical teeth, hub, decentral holes and stacking are
 > disabled. A central bore can still be enabled.
 
+### Internal gear – ring gear (optional)
+
+| Parameter             | Description                                                        | Default |
+|-----------------------|--------------------------------------------------------------------|---------|
+| Ring outer diameter   | Outer diameter of the ring body (must be > gear diameter)         | 30 mm   |
+
+### DIN-3960 mode (optional)
+
+| Parameter       | Description                                                            | Default |
+|-----------------|------------------------------------------------------------------------|---------|
+| Module (DIN 780)| Standard module m – sets gear diameter: d = m · z                     | 1.0 mm  |
+| Profile shift x | Profile shift coefficient per DIN 3960 (0 = standard tooth)           | 0.0     |
+
+> In DIN mode the gear diameter is computed automatically from module and tooth count.
+> The panel shows an undercut warning when x < x_min for the selected tooth count.
+
+### Gear pairing (optional)
+
+| Parameter          | Description                                                     | Default |
+|--------------------|-----------------------------------------------------------------|---------|
+| Counter-gear teeth | Tooth count of the automatically generated counter-gear        | 16      |
+| Counter-gear thickness | Axial thickness of the counter-gear                        | 5 mm    |
+| Counter-gear as ring gear | Generate counter-gear as internal gear               | off     |
+
 ## Roadmap
 
 Done:
@@ -117,12 +144,19 @@ Done:
 - [x] Hub – one- or two-sided, combinable with the bore
 - [x] Gear stacking (several gears on one shaft, e.g. stepped gears)
 - [x] Bevel gears (straight- and spiral-toothed)
+- [x] Internal gears (ring gears)
+- [x] DIN-3960 mode: standard module (DIN 780), profile shift `x`, undercut warning
+- [x] Gear pairing (counter-gear at correct center distance)
 
 Open:
 
-- [ ] Internal gears (ring gears)
-- [ ] Gear pairing (two gears matched to each other, incl. center distance)
-- [ ] DIN-3960 mode: module dropdown (DIN 780), profile shift `x`, true trochoidal root, undercut warning
+- [ ] Backlash (Flankenspiel)
+- [ ] Rack gear (Zahnstange)
+- [ ] Automatic rigging (rotation via driver)
+- [ ] Free-text module input (in addition to DIN dropdown)
+- [ ] Preview mode (Modal Operator with live preview)
+- [ ] Negative hub (hub pocket inside the gear body)
+- [ ] True trochoidal root fillet (full DIN 3960)
 
 ## Contributing
 
