@@ -83,11 +83,12 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 ### Nabe (optional)
 
-| Parameter          | Beschreibung                                      | Standardwert |
-|--------------------|---------------------------------------------------|--------------|
-| Nabendurchmesser   | Außendurchmesser der zylindrischen Nabe           | 16 mm        |
-| Nabenhöhe          | Überstand der Nabe über die Stirnfläche           | 4 mm         |
-| Seite              | Beidseitig / nur Rückseite / nur Vorderseite      | Beidseitig   |
+| Parameter          | Beschreibung                                              | Standardwert |
+|--------------------|-----------------------------------------------------------|--------------|
+| Nabendurchmesser   | Außendurchmesser der zylindrischen Nabe                   | 16 mm        |
+| Nabenhöhe          | Überstand bzw. Tiefe der Nabe                             | 4 mm         |
+| Seite              | Beidseitig / nur Rückseite / nur Vorderseite              | Beidseitig   |
+| Negative Nabe      | Nabe als Vertiefung im Zahnradkörper statt als Überstand  | aus          |
 
 ### Stufenrad / Stacking (optional)
 
@@ -127,11 +128,13 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 ### Zahnrad-Paarung (optional)
 
-| Parameter          | Beschreibung                                                    | Standardwert |
-|--------------------|-----------------------------------------------------------------|--------------|
-| Zähnezahl Gegenrad | Zähnezahl des automatisch erzeugten Gegenrads                  | 16           |
-| Dicke Gegenrad     | Axiale Dicke des Gegenrads                                      | 5 mm         |
-| Gegenrad als Hohlrad | Gegenrad als Innenverzahnung erzeugen                         | aus          |
+| Parameter            | Beschreibung                                                  | Standardwert |
+|----------------------|---------------------------------------------------------------|--------------|
+| Zähnezahl Gegenrad   | Zähnezahl des automatisch erzeugten Gegenrads                | 16           |
+| Dicke Gegenrad       | Axiale Dicke des Gegenrads                                    | 5 mm         |
+| Gegenrad als Hohlrad | Gegenrad als Innenverzahnung erzeugen                        | aus          |
+| Bohrung im Gegenrad  | Zentrische Bohrung im Gegenrad (Durchmesser einstellbar)     | aus          |
+| Nabe im Gegenrad     | Nabe im Gegenrad (Durchmesser, Höhe, Seite, negativ)         | aus          |
 
 ## Roadmap (nächste Versionen)
 
@@ -145,7 +148,8 @@ Erledigt:
 - [x] Kegelverzahnung (Bevel Gear, gerad- und spiralverzahnt)
 - [x] Innenverzahnung (Hohlrad / Ring Gear)
 - [x] DIN-3960-Modus: Normmodul (DIN 780), Profilverschiebung `x`, Unterschnitt-Warnung
-- [x] Zahnrad-Paarung (Gegenrad auf korrektem Achsabstand)
+- [x] Zahnrad-Paarung (Gegenrad auf korrektem Achsabstand, inkl. Bohrung/Nabe im Gegenrad)
+- [x] Negative Nabe (Nabentasche im Zahnradkörper)
 
 Offen:
 
@@ -154,7 +158,6 @@ Offen:
 - [ ] Automatisches Rigging (Rotation via Driver)
 - [ ] Modul-Eingabe als Freitexteingabe (zusätzlich zum DIN-Dropdown)
 - [ ] Vorschau-Modus (Modal Operator mit Live-Preview)
-- [ ] Negative Nabe (Nabentasche im Zahnradkörper)
 - [ ] Echte Trochoide am Zahnfuß (DIN 3960 vollständig)
 
 ## Mitwirken
