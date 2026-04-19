@@ -11,7 +11,7 @@ Ideal for mechanical design, 3D printing, animation, technical visualization and
 
 ## ✨ Features
 
-- ✅ Fully parametric: gear diameter, tooth count, thickness, pressure angle
+- ✅ Fully parametric: pitch-circle diameter, tooth count, thickness, pressure angle
 - ✅ True involute teeth per DIN-867 reference profile (`h_aP* = 1.0`, `h_fP* = 1.25`)
 - ✅ Correct pitch-circle tooth thickness `π·m/2` via `inv(α) = tan(α) − α`
 - ✅ Tangentially blended trochoidal fillet at the tooth root
@@ -56,7 +56,7 @@ The gear is created directly as a new object in the scene.
 
 | Parameter        | Description                    | Default |
 |------------------|--------------------------------|---------|
-| Gear diameter    | Pitch-circle diameter          | 20 mm   |
+| Pitch-circle diameter | Diameter of the pitch circle | 20 mm   |
 | Tooth count      | Number of teeth                | 24      |
 | Thickness        | Axial face width               | 5 mm    |
 | Pressure angle   | Pressure angle in degrees      | 20°     |
@@ -86,6 +86,7 @@ The gear is created directly as a new object in the scene.
 | Parameter     | Description                                               | Default    |
 |---------------|-----------------------------------------------------------|------------|
 | Hub diameter  | Outer diameter of the cylindrical hub                     | 16 mm      |
+| Hub inner dia.| Inner diameter of the hub (0 = solid; >0 = tube)         | 0 mm       |
 | Hub height    | Protrusion or pocket depth of the hub                     | 4 mm       |
 | Side          | Both sides / back only / front only                       | Both sides |
 | Negative hub  | Hub as a pocket carved into the gear body (not protrusion)| off        |
@@ -120,10 +121,10 @@ The gear is created directly as a new object in the scene.
 
 | Parameter       | Description                                                            | Default |
 |-----------------|------------------------------------------------------------------------|---------|
-| Module (DIN 780)| Standard module m – sets gear diameter: d = m · z                     | 1.0 mm  |
+| Module (DIN 780)| Standard module m – sets pitch-circle diameter: d = m · z             | 1.0 mm  |
 | Profile shift x | Profile shift coefficient per DIN 3960 (0 = standard tooth)           | 0.0     |
 
-> In DIN mode the gear diameter is computed automatically from module and tooth count.
+> In DIN mode the pitch-circle diameter is computed automatically from module and tooth count.
 > The panel shows an undercut warning when x < x_min for the selected tooth count.
 
 ### Gear pairing (optional)
