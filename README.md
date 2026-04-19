@@ -12,7 +12,7 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 
 ## ✨ Features
 
-- ✅ Voll parametrisch: Zahnraddurchmesser, Zähnezahl, Dicke, Eingriffswinkel
+- ✅ Voll parametrisch: Teilkreisdurchmesser, Zähnezahl, Dicke, Eingriffswinkel
 - ✅ Echte Evolventenverzahnung nach DIN-867-Bezugsprofil (`h_aP* = 1.0`, `h_fP* = 1.25`)
 - ✅ Korrekte Teilkreis-Zahndicke `π·m/2` per `inv(α) = tan(α) − α`
 - ✅ Tangential geblendeter Kreisbogen-Fillet am Zahnfuß (trochoidale Näherung)
@@ -57,7 +57,7 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 | Parameter              | Beschreibung                          | Standardwert |
 |------------------------|---------------------------------------|--------------|
-| Zahnraddurchmesser     | Teilkreisdurchmesser des Zahnrads     | 20 mm        |
+| Teilkreisdurchmesser   | Durchmesser des Teilkreises           | 20 mm        |
 | Zähnezahl              | Anzahl der Zähne                      | 24           |
 | Dicke                  | Zahnbreite (axiale Dicke)             | 5 mm         |
 | Eingriffswinkel        | Druckwinkel in Grad                   | 20°          |
@@ -87,6 +87,7 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 | Parameter          | Beschreibung                                              | Standardwert |
 |--------------------|-----------------------------------------------------------|--------------|
 | Nabendurchmesser   | Außendurchmesser der zylindrischen Nabe                   | 16 mm        |
+| Nabeninnendurchmesser | Innendurchmesser der Nabe (0 = Vollzylinder; >0 = Rohr) | 0 mm         |
 | Nabenhöhe          | Überstand bzw. Tiefe der Nabe                             | 4 mm         |
 | Seite              | Beidseitig / nur Rückseite / nur Vorderseite              | Beidseitig   |
 | Negative Nabe      | Nabe als Vertiefung im Zahnradkörper statt als Überstand  | aus          |
@@ -121,10 +122,10 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 | Parameter            | Beschreibung                                                           | Standardwert |
 |----------------------|------------------------------------------------------------------------|--------------|
-| Modul (DIN 780)      | Normmodul m – bestimmt Zahnraddurchmesser: d = m · z                  | 1,0 mm       |
+| Modul (DIN 780)      | Normmodul m – bestimmt Teilkreisdurchmesser: d = m · z                | 1,0 mm       |
 | Profilverschiebung x | Profilverschiebungsfaktor nach DIN 3960 (0 = Normverzahnung)          | 0,0          |
 
-> Im DIN-Modus wird der Zahnraddurchmesser automatisch aus Modul und Zähnezahl berechnet.
+> Im DIN-Modus wird der Teilkreisdurchmesser automatisch aus Modul und Zähnezahl berechnet.
 > Das Panel zeigt eine Unterschnitt-Warnung, wenn x < x_min für die gewählte Zähnezahl.
 
 ### Zahnrad-Paarung (optional)

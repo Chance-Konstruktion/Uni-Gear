@@ -402,6 +402,7 @@ def create_gear_mesh(
     hole_radius=0.0,
     hole_pitch_radius=0.0,
     hub_radius=0.0,
+    hub_inner_radius=0.0,
     hub_height=0.0,
     hub_sides="BOTH",
     hub_negative=False,
@@ -430,6 +431,8 @@ def create_gear_mesh(
     has_hub       = has_hub_back or has_hub_front
     has_bore      = bore_radius > 0.0
     has_holes     = hole_count > 0 and hole_radius > 0.0
+    # Hohle Nabe (Rohr): nur in Kombination mit positiver Nabe sinnvoll.
+    has_hollow_hub = has_hub and hub_inner_radius > 0.0 and not hub_negative
 
     # --- Validierung ---
     if has_bore and bore_radius >= root_radius * 0.95:
@@ -439,6 +442,16 @@ def create_gear_mesh(
             raise ValueError("Nabenradius zu gross fuer diesen Fusskreisradius.")
         if has_bore and bore_radius >= hub_radius:
             raise ValueError("Bohrungsradius muss kleiner als Nabenradius sein.")
+        if hub_inner_radius > 0.0:
+            if hub_negative:
+                raise ValueError(
+                    "Nabeninnendurchmesser ist mit negativer Nabe nicht kombinierbar.")
+            if hub_inner_radius >= hub_radius * 0.95:
+                raise ValueError("Nabeninnenradius muss kleiner als Nabenaussenradius sein.")
+            if has_bore and bore_radius >= hub_inner_radius * 0.99:
+                raise ValueError(
+                    "Zentrische Bohrung muss kleiner als Nabeninnendurchmesser sein "
+                    "(fuer eine durchgehende Bohrung ohne Innenrohr: Nabeninnendurchmesser auf 0 setzen).")
         if hub_negative:
             # Tasche darf nicht tiefer sein als der Zahnradkoerper (ggf. pro Seite).
             max_depth_per_side = 0.9 * thickness if hub_sides == "BOTH" else 0.95 * thickness
@@ -506,6 +519,8 @@ def create_gear_mesh(
     #   hub_back:  Tasche von z = 0 bis z = +hub_height (Boden innen im Zahnrad)
     #   hub_front: Tasche von z = thickness-hub_height bis z = thickness
     hub_back_bot = hub_back_top = hub_front_bot = hub_front_top = None
+    hub_back_bot_inner = hub_back_top_inner = None
+    hub_front_bot_inner = hub_front_top_inner = None
     if has_hub_back:
         hub_segs     = _segs_for_r(hub_radius)
         z_outer_back = +hub_height if hub_negative else -hub_height
@@ -514,17 +529,30 @@ def create_gear_mesh(
         # Bei negativer Nabe zeigt die Zylinderwand nach INNEN (zur Achse) ->
         # reverse_winding=True. Ansonsten zeigt sie nach aussen.
         _bridge_rings(bm, hub_back_bot, hub_back_top, reverse_winding=hub_negative)
+        if has_hollow_hub:
+            inner_segs = _segs_for_r(hub_inner_radius)
+            hub_back_bot_inner = _add_circle_layer(bm, 0.0, 0.0, -hub_height, hub_inner_radius, inner_segs)
+            hub_back_top_inner = _add_circle_layer(bm, 0.0, 0.0, 0.0,         hub_inner_radius, inner_segs)
+            # Innenwand der Roehre: Normalen zeigen radial nach INNEN (ins Naben-Rohrloch).
+            _bridge_rings(bm, hub_back_bot_inner, hub_back_top_inner, reverse_winding=True)
     if has_hub_front:
         hub_segs      = _segs_for_r(hub_radius)
         z_outer_front = (thickness - hub_height) if hub_negative else (thickness + hub_height)
         hub_front_bot = _add_circle_layer(bm, 0.0, 0.0, thickness,     hub_radius, hub_segs)
         hub_front_top = _add_circle_layer(bm, 0.0, 0.0, z_outer_front, hub_radius, hub_segs)
         _bridge_rings(bm, hub_front_bot, hub_front_top, reverse_winding=hub_negative)
+        if has_hollow_hub:
+            inner_segs = _segs_for_r(hub_inner_radius)
+            hub_front_bot_inner = _add_circle_layer(bm, 0.0, 0.0, thickness,              hub_inner_radius, inner_segs)
+            hub_front_top_inner = _add_circle_layer(bm, 0.0, 0.0, thickness + hub_height, hub_inner_radius, inner_segs)
+            _bridge_rings(bm, hub_front_bot_inner, hub_front_top_inner, reverse_winding=True)
 
     # --- Bohrung (erstreckt sich durch Nabe falls positiv; bei negativer Nabe
     # geht die Bohrung nur durch den Zahnradkoerper) ---
     # Wir benoetigen Bohrungsringe bei allen Stirnflaechen-Z-Werten fuer triangle_fill.
-    if hub_negative:
+    if hub_negative or has_hollow_hub:
+        # Hohle Nabe: Bohrung geht nur durch den Zahnradkoerper; die Nabenroehre
+        # hat bereits ihr eigenes (groesseres) Innenloch.
         bore_z_start = 0.0
         bore_z_end   = thickness
     else:
@@ -580,18 +608,40 @@ def create_gear_mesh(
     _tess_fill_cap(bm, outer_top, _holes(inner_front, hole_tops), normal_z_sign=+1)
 
     # Naben-Rueckseite: Normalen zeigen in -Z (Aussenstirn der Nabe ODER Boden der Tasche).
-    # Positiv: hub_back_bot bei z=-hub_height, bore_ring bei z=bore_z_start.
-    # Negativ: hub_back_bot bei z=+hub_height, bore_ring ebenfalls dort.
+    # Solid:    hub_back_bot bei z=-hub_height, Loch = Bohrungsring falls vorhanden.
+    # Negativ:  hub_back_bot bei z=+hub_height, Loch = Bohrungsring dort.
+    # Hohl:     Aussenstirn ist ringfoermig (Aussenring hub_back_bot, Innenring hub_back_bot_inner).
     if has_hub_back:
-        z_cap_back = (+hub_height) if hub_negative else bore_z_start
-        _tess_fill_cap(bm, hub_back_bot, _holes(bore_rings.get(z_cap_back), []), normal_z_sign=-1)
+        if has_hollow_hub:
+            _tess_fill_cap(bm, hub_back_bot,
+                           _holes(hub_back_bot_inner, []), normal_z_sign=-1)
+        else:
+            z_cap_back = (+hub_height) if hub_negative else bore_z_start
+            _tess_fill_cap(bm, hub_back_bot,
+                           _holes(bore_rings.get(z_cap_back), []), normal_z_sign=-1)
 
     # Naben-Vorderseite: Normalen zeigen in +Z.
-    # Positiv: hub_front_top bei z=thickness+hub_height.
-    # Negativ: hub_front_top bei z=thickness-hub_height.
     if has_hub_front:
-        z_cap_front = (thickness - hub_height) if hub_negative else bore_z_end
-        _tess_fill_cap(bm, hub_front_top, _holes(bore_rings.get(z_cap_front), []), normal_z_sign=+1)
+        if has_hollow_hub:
+            _tess_fill_cap(bm, hub_front_top,
+                           _holes(hub_front_top_inner, []), normal_z_sign=+1)
+        else:
+            z_cap_front = (thickness - hub_height) if hub_negative else bore_z_end
+            _tess_fill_cap(bm, hub_front_top,
+                           _holes(bore_rings.get(z_cap_front), []), normal_z_sign=+1)
+
+    # Hohle Nabe: Sitz der Roehre am Zahnradkoerper (Boden des Rohr-Innenlochs).
+    # Rueckseite bei z=0: Ringflaeche zwischen hub_back_top_inner (aussen) und
+    # ggf. Bohrungsring (Loch). Normale -Z (das Zahnrad liegt oberhalb in +z).
+    if has_hollow_hub and has_hub_back:
+        bore_ring_back = bore_rings.get(0.0) if has_bore else None
+        _tess_fill_cap(bm, hub_back_top_inner,
+                       _holes(bore_ring_back, []), normal_z_sign=-1)
+    # Vorderseite bei z=thickness: Normale +Z.
+    if has_hollow_hub and has_hub_front:
+        bore_ring_front = bore_rings.get(thickness) if has_bore else None
+        _tess_fill_cap(bm, hub_front_bot_inner,
+                       _holes(bore_ring_front, []), normal_z_sign=+1)
 
     # Absichtlich KEIN recalc_face_normals mehr: die expliziten normal_z_sign-Checks
     # in _fill_cap liefern korrekte Stirnflaechen-Normalen. recalc wuerde bei nicht
@@ -833,8 +883,12 @@ def create_bevel_gear_mesh(
             for (x, y) in profile_2d
         ])
 
+    # Mantel: Da die Layer in -z-Richtung (vom Rueckkegel zum Apex) wandern
+    # und der Radius dabei schrumpft, liefert die Standard-Wicklung Normalen,
+    # die radial nach INNEN zeigen. reverse_winding=True dreht das um, sodass
+    # die Mantelflaechen korrekt nach aussen weisen.
     for k in range(layers):
-        _bridge_rings(bm, slices[k], slices[k + 1])
+        _bridge_rings(bm, slices[k], slices[k + 1], reverse_winding=True)
 
     # Zentrische Bohrung durch den gesamten Kegel (zylindrisch).
     bore_back = bore_front = None
@@ -847,16 +901,13 @@ def create_bevel_gear_mesh(
         # Umgekehrte Wicklung, damit Normalen nach innen zeigen (Bohrungsinnenwand).
         _bridge_rings(bm, bore_front, bore_back, reverse_winding=True)
 
-    def _fill_cap(outer_loop, inner_ring):
-        loops = [outer_loop]
-        if inner_ring is not None:
-            loops.append(inner_ring)
-        bmesh.ops.triangle_fill(bm, edges=_collect_loop_edges(bm, loops), use_beauty=True)
-
-    _fill_cap(slices[0],  bore_back)    # Grosses Ende (z = 0)
-    _fill_cap(slices[-1], bore_front)   # Apex-Ende    (z < 0)
-
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    # Stirnflaechen robust tessellieren — slices[0] und slices[-1] sind jeweils
+    # planar (konstantes z), das stark nicht-konvexe Zahnprofil laesst sich mit
+    # tessellate_polygon sauber ohne Ueberlappungen / Luecken fuellen.
+    holes_back  = [bore_back]  if bore_back  is not None else []
+    holes_front = [bore_front] if bore_front is not None else []
+    _tess_fill_cap(bm, slices[0],  holes_back,  normal_z_sign=+1)  # Grosses Ende: Normale +Z
+    _tess_fill_cap(bm, slices[-1], holes_front, normal_z_sign=-1)  # Apex-Ende:    Normale -Z
 
     if z_offset != 0.0:
         bmesh.ops.translate(bm, vec=(0.0, 0.0, z_offset), verts=bm.verts[:])
@@ -876,8 +927,8 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     # --- Basisgeometrie ---
     # UI arbeitet mit Durchmessern; die interne Berechnung nutzt weiterhin Radien.
     pitch_diameter: bpy.props.FloatProperty(
-        name="Zahnraddurchmesser",
-        description="Aussendurchmesser des Zahnrads (Teilkreis). Im DIN-Modus automatisch berechnet.",
+        name="Teilkreisdurchmesser",
+        description="Teilkreisdurchmesser des Zahnrads. Im DIN-Modus automatisch aus Modul und Zaehnezahl berechnet.",
         default=0.020, min=0.002, max=2.0, unit="LENGTH",
     )
     teeth: bpy.props.IntProperty(
@@ -906,6 +957,12 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     hub_diameter: bpy.props.FloatProperty(
         name="Nabendurchmesser", description="Aussendurchmesser der Nabe",
         default=0.016, min=0.0002, max=2.0, unit="LENGTH",
+    )
+    hub_inner_diameter: bpy.props.FloatProperty(
+        name="Nabeninnendurchmesser",
+        description="Innendurchmesser der Nabe (0 = Vollzylinder). Macht die Nabe zu einem Rohr; "
+                    "unabhaengig vom zentrischen Bohrungsdurchmesser.",
+        default=0.0, min=0.0, max=2.0, unit="LENGTH",
     )
     hub_height: bpy.props.FloatProperty(
         name="Nabenhoehe", description="Wie weit die Nabe ueber die Stirnflaeche hinausragt",
@@ -994,7 +1051,7 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     )
     # Stufe 2
     stack2_pitch_diameter: bpy.props.FloatProperty(
-        name="Zahnraddurchmesser", default=0.015, min=0.002, max=2.0, unit="LENGTH",
+        name="Teilkreisdurchmesser", default=0.015, min=0.002, max=2.0, unit="LENGTH",
     )
     stack2_teeth: bpy.props.IntProperty(name="Zaehnezahl", default=16, min=6, max=200)
     stack2_thickness: bpy.props.FloatProperty(
@@ -1002,7 +1059,7 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     )
     # Stufe 3
     stack3_pitch_diameter: bpy.props.FloatProperty(
-        name="Zahnraddurchmesser", default=0.010, min=0.002, max=2.0, unit="LENGTH",
+        name="Teilkreisdurchmesser", default=0.010, min=0.002, max=2.0, unit="LENGTH",
     )
     stack3_teeth: bpy.props.IntProperty(name="Zaehnezahl", default=10, min=6, max=200)
     stack3_thickness: bpy.props.FloatProperty(
@@ -1017,7 +1074,7 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     )
     internal_ring_diameter: bpy.props.FloatProperty(
         name="Ring-Aussendurchmesser",
-        description="Aussendurchmesser des Hohlrad-Rings (muss groesser als Zahnraddurchmesser sein)",
+        description="Aussendurchmesser des Hohlrad-Rings (muss groesser als Kopfkreis der Verzahnung sein)",
         default=0.030, min=0.004, max=2.0, unit="LENGTH",
     )
 
@@ -1077,6 +1134,11 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     pair_hub_diameter: bpy.props.FloatProperty(
         name="Nabendurchmesser",
         default=0.010, min=0.0002, max=2.0, unit="LENGTH",
+    )
+    pair_hub_inner_diameter: bpy.props.FloatProperty(
+        name="Nabeninnendurchmesser",
+        description="Innendurchmesser der Gegenrad-Nabe (0 = Vollzylinder)",
+        default=0.0, min=0.0, max=2.0, unit="LENGTH",
     )
     pair_hub_height: bpy.props.FloatProperty(
         name="Nabenhoehe",
@@ -1168,10 +1230,11 @@ class MESH_OT_create_gear(bpy.types.Operator):
                 center_dist = pitch_r - pair_r  # Inneneingriff: a = r_ring - r_ritzel
                 helix_pair  = props.helix_angle if props.use_helical else 0.0
                 p_bore_r = (props.pair_bore_diameter * 0.5) if props.pair_use_bore else 0.0
-                p_hub_r  = (props.pair_hub_diameter  * 0.5) if props.pair_use_hub  else 0.0
-                p_hub_h  =  props.pair_hub_height           if props.pair_use_hub  else 0.0
-                p_hub_s  =  props.pair_hub_sides            if props.pair_use_hub  else "BOTH"
-                p_hub_n  =  props.pair_hub_negative         if props.pair_use_hub  else False
+                p_hub_r  = (props.pair_hub_diameter        * 0.5) if props.pair_use_hub  else 0.0
+                p_hub_ri = (props.pair_hub_inner_diameter  * 0.5) if props.pair_use_hub  else 0.0
+                p_hub_h  =  props.pair_hub_height                 if props.pair_use_hub  else 0.0
+                p_hub_s  =  props.pair_hub_sides                  if props.pair_use_hub  else "BOTH"
+                p_hub_n  =  props.pair_hub_negative               if props.pair_use_hub  else False
                 try:
                     create_gear_mesh(
                         pitch_radius=pair_r,
@@ -1181,6 +1244,7 @@ class MESH_OT_create_gear(bpy.types.Operator):
                         helix_angle_deg=helix_pair,
                         bore_radius=p_bore_r,
                         hub_radius=p_hub_r,
+                        hub_inner_radius=p_hub_ri,
                         hub_height=p_hub_h,
                         hub_sides=p_hub_s,
                         hub_negative=p_hub_n,
@@ -1199,6 +1263,7 @@ class MESH_OT_create_gear(bpy.types.Operator):
         hole_r    = (props.hole_diameter * 0.5)        if props.use_holes else 0.0
         hole_pr   = (props.hole_pitch_diameter * 0.5)  if props.use_holes else 0.0
         hub_r     = (props.hub_diameter * 0.5)         if props.use_hub   else 0.0
+        hub_ri    = (props.hub_inner_diameter * 0.5)   if props.use_hub   else 0.0
         hub_h     =  props.hub_height                  if props.use_hub   else 0.0
         hub_s     =  props.hub_sides                   if props.use_hub   else "BOTH"
         hub_neg   =  props.hub_negative                if props.use_hub   else False
@@ -1237,11 +1302,13 @@ class MESH_OT_create_gear(bpy.types.Operator):
                 h_sides = "NONE"  # Mittelstufen: keine Nabe
 
             if h_sides == "NONE":
-                eff_hub_r = 0.0
-                eff_hub_h = 0.0
+                eff_hub_r  = 0.0
+                eff_hub_ri = 0.0
+                eff_hub_h  = 0.0
             else:
-                eff_hub_r = hub_r
-                eff_hub_h = hub_h
+                eff_hub_r  = hub_r
+                eff_hub_ri = hub_ri
+                eff_hub_h  = hub_h
 
             try:
                 create_gear_mesh(
@@ -1255,6 +1322,7 @@ class MESH_OT_create_gear(bpy.types.Operator):
                     hole_radius=hole_r,
                     hole_pitch_radius=hole_pr,
                     hub_radius=eff_hub_r,
+                    hub_inner_radius=eff_hub_ri,
                     hub_height=eff_hub_h,
                     hub_sides=h_sides,
                     hub_negative=hub_neg,
@@ -1273,11 +1341,12 @@ class MESH_OT_create_gear(bpy.types.Operator):
             # Gegenrad-Teilradius aus gleichem Modul: r2 = r1 * z2/z1
             pair_r = pitch_r * props.pair_teeth / props.teeth
             # Gegenrad-Bohrung / Nabe (optional)
-            p_bore_r = (props.pair_bore_diameter * 0.5) if props.pair_use_bore else 0.0
-            p_hub_r  = (props.pair_hub_diameter  * 0.5) if props.pair_use_hub  else 0.0
-            p_hub_h  =  props.pair_hub_height           if props.pair_use_hub  else 0.0
-            p_hub_s  =  props.pair_hub_sides            if props.pair_use_hub  else "BOTH"
-            p_hub_n  =  props.pair_hub_negative         if props.pair_use_hub  else False
+            p_bore_r = (props.pair_bore_diameter       * 0.5) if props.pair_use_bore else 0.0
+            p_hub_r  = (props.pair_hub_diameter        * 0.5) if props.pair_use_hub  else 0.0
+            p_hub_ri = (props.pair_hub_inner_diameter  * 0.5) if props.pair_use_hub  else 0.0
+            p_hub_h  =  props.pair_hub_height                 if props.pair_use_hub  else 0.0
+            p_hub_s  =  props.pair_hub_sides                  if props.pair_use_hub  else "BOTH"
+            p_hub_n  =  props.pair_hub_negative               if props.pair_use_hub  else False
 
             if props.pair_internal:
                 # Hauptrad ist Ritzel, Gegenrad ist Hohlrad. Beide haben gleiches Modul.
@@ -1313,6 +1382,7 @@ class MESH_OT_create_gear(bpy.types.Operator):
                         helix_angle_deg=helix_deg,
                         bore_radius=p_bore_r,
                         hub_radius=p_hub_r,
+                        hub_inner_radius=p_hub_ri,
                         hub_height=p_hub_h,
                         hub_sides=p_hub_s,
                         hub_negative=p_hub_n,
@@ -1356,7 +1426,7 @@ class VIEW3D_PT_gear_generator(bpy.types.Panel):
             d_mm = m_mm * props.teeth
             row = box.row()
             row.enabled = False
-            row.label(text=f"Zahnraddurchmesser: {d_mm:.2f} mm")
+            row.label(text=f"Teilkreisdurchmesser: {d_mm:.2f} mm")
         else:
             box.prop(props, "pitch_diameter")
 
@@ -1430,6 +1500,7 @@ class VIEW3D_PT_gear_hub(_GearSubPanel):
         col = layout.column()
         col.enabled = props.use_hub and not props.use_bevel
         col.prop(props, "hub_diameter")
+        col.prop(props, "hub_inner_diameter")
         col.prop(props, "hub_height")
         col.prop(props, "hub_sides")
         col.prop(props, "hub_negative")
@@ -1508,7 +1579,7 @@ class VIEW3D_PT_gear_din3960(_GearSubPanel):
         if props.use_din3960:
             m_mm = float(props.din_module)
             d_mm = m_mm * props.teeth
-            col.label(text=f"→ Zahnraddurchmesser: {d_mm:.2f} mm", icon="INFO")
+            col.label(text=f"→ Teilkreisdurchmesser: {d_mm:.2f} mm", icon="INFO")
             # Unterschnitt-Warnung
             alpha = math.radians(props.pressure_angle)
             z_min = 2.0 / math.sin(alpha) ** 2
@@ -1559,6 +1630,7 @@ class VIEW3D_PT_gear_pairing(_GearSubPanel):
         sub_h = box_h.column()
         sub_h.enabled = props.pair_use_hub
         sub_h.prop(props, "pair_hub_diameter")
+        sub_h.prop(props, "pair_hub_inner_diameter")
         sub_h.prop(props, "pair_hub_height")
         sub_h.prop(props, "pair_hub_sides")
         sub_h.prop(props, "pair_hub_negative")
