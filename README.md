@@ -115,7 +115,7 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 | Parameter              | Beschreibung                                                   | Standardwert |
 |------------------------|----------------------------------------------------------------|--------------|
-| Ring-Außendurchmesser  | Außendurchmesser des Hohlrad-Rings (> Zahnraddurchmesser)     | 30 mm        |
+| Ring-Außendurchmesser  | Außendurchmesser des Hohlrad-Rings (> Kopfkreis + 5 % Wand)   | 30 mm        |
 
 ### DIN-3960-Modus (optional)
 
