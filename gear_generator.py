@@ -339,6 +339,48 @@ def _collect_loop_edges(bm, loops):
     return edges
 
 
+def _tess_fill_cap(bm, outer_loop, hole_loops, normal_z_sign):
+    """Fuellt eine planare Cap aus mehreren Vertex-Loops (1 Aussenloop + N Loecher)
+    robust mit mathutils.geometry.tessellate_polygon.
+
+    Vorteil gegenueber bmesh.ops.triangle_fill: tessellate_polygon erwartet eine
+    klare Hierarchie (aussen + Loecher), funktioniert auf 2D-Polygonen mit beliebig
+    vielen Loechern und kann den stark nicht-konvexen Evolventen-Profilumriss
+    zuverlaessig triangulieren, ohne Ueberlappungen oder fehlende Flaechen.
+
+    normal_z_sign: +1 erwartet Normalen in +Z, -1 in -Z. Jede Dreiecks-Wicklung
+    wird anhand ihrer tatsaechlichen z-Normal auf das gewuenschte Vorzeichen
+    gebracht.
+    """
+    from mathutils.geometry import tessellate_polygon
+
+    loops = [outer_loop]
+    if hole_loops:
+        loops.extend(hole_loops)
+
+    # 2D-Koordinaten fuer die Triangulation. z wird ignoriert, da die Cap planar ist.
+    coord_lists = [[v.co.xy.to_3d() for v in loop] for loop in loops]
+    flat_verts  = [v for loop in loops for v in loop]
+
+    triangles = tessellate_polygon(coord_lists)
+
+    for tri in triangles:
+        i, j, k = tri
+        v0, v1, v2 = flat_verts[i], flat_verts[j], flat_verts[k]
+        # 2D-Signed-Area-Test -> z-Komponente der Normalen.
+        ax, ay = v0.co.x, v0.co.y
+        bx, by = v1.co.x, v1.co.y
+        cx, cy = v2.co.x, v2.co.y
+        cross_z = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+        if normal_z_sign * cross_z < 0.0:
+            v1, v2 = v2, v1
+        try:
+            bm.faces.new((v0, v1, v2))
+        except ValueError:
+            # Degenerierte Dreiecke oder bereits existierende Flaeche -> ueberspringen.
+            pass
+
+
 def _compute_helix_layers(thickness, helix_angle_rad, pitch_radius):
     """Waehlt eine Anzahl von axialen Schichten fuer die Schraegverzahnung."""
     if abs(helix_angle_rad) < 1e-9 or thickness <= 0.0:
@@ -521,44 +563,35 @@ def create_gear_mesh(
             hole_bottoms.append(rb)
             hole_tops.append(rt)
 
-    # --- Stirnflaechen (triangle_fill) ---
-    # normal_z_sign: +1 erwartet Normalen in +Z, -1 in -Z.
-    # triangle_fill kann Flaechen mit gemischter Wicklung erzeugen (bei nicht-konvexen
-    # Profilen). Wir pruefen JEDE erzeugte Flaeche einzeln und flippen sie individuell,
-    # damit der "unten offene" Bug zuverlaessig behoben wird.
-    def _fill_cap(outer_loop, inner_ring, extra_holes, normal_z_sign=0):
-        loops = [outer_loop]
+    # --- Stirnflaechen (robuste Tessellation mit Loch-Unterstuetzung) ---
+    def _holes(inner_ring, extras):
+        hs = []
         if inner_ring is not None:
-            loops.append(inner_ring)
-        loops.extend(extra_holes)
-        result    = bmesh.ops.triangle_fill(bm, edges=_collect_loop_edges(bm, loops), use_beauty=True)
-        new_faces = result.get('faces', [])
-        if normal_z_sign:
-            wrong = [f for f in new_faces if normal_z_sign * f.normal.z < 0.0]
-            if wrong:
-                bmesh.ops.reverse_faces(bm, faces=wrong)
+            hs.append(inner_ring)
+        hs.extend(extras)
+        return hs
 
     # Zahnrad-Rueckseite (z=0): Normalen zeigen in -Z
     inner_back = hub_back_top if has_hub_back else bore_rings.get(0.0)
-    _fill_cap(outer_bottom, inner_back, hole_bottoms, normal_z_sign=-1)
+    _tess_fill_cap(bm, outer_bottom, _holes(inner_back, hole_bottoms), normal_z_sign=-1)
 
     # Zahnrad-Vorderseite (z=thickness): Normalen zeigen in +Z
     inner_front = hub_front_bot if has_hub_front else bore_rings.get(thickness)
-    _fill_cap(outer_top, inner_front, hole_tops, normal_z_sign=+1)
+    _tess_fill_cap(bm, outer_top, _holes(inner_front, hole_tops), normal_z_sign=+1)
 
     # Naben-Rueckseite: Normalen zeigen in -Z (Aussenstirn der Nabe ODER Boden der Tasche).
-    # Bei positiver Nabe: hub_back_bot bei z=-hub_height, bore_ring bei z=bore_z_start.
-    # Bei negativer Nabe: hub_back_bot bei z=+hub_height, bore_ring ebenfalls dort.
+    # Positiv: hub_back_bot bei z=-hub_height, bore_ring bei z=bore_z_start.
+    # Negativ: hub_back_bot bei z=+hub_height, bore_ring ebenfalls dort.
     if has_hub_back:
         z_cap_back = (+hub_height) if hub_negative else bore_z_start
-        _fill_cap(hub_back_bot, bore_rings.get(z_cap_back), [], normal_z_sign=-1)
+        _tess_fill_cap(bm, hub_back_bot, _holes(bore_rings.get(z_cap_back), []), normal_z_sign=-1)
 
     # Naben-Vorderseite: Normalen zeigen in +Z.
-    # Bei positiver Nabe: hub_front_top bei z=thickness+hub_height.
-    # Bei negativer Nabe: hub_front_top bei z=thickness-hub_height.
+    # Positiv: hub_front_top bei z=thickness+hub_height.
+    # Negativ: hub_front_top bei z=thickness-hub_height.
     if has_hub_front:
         z_cap_front = (thickness - hub_height) if hub_negative else bore_z_end
-        _fill_cap(hub_front_top, bore_rings.get(z_cap_front), [], normal_z_sign=+1)
+        _tess_fill_cap(bm, hub_front_top, _holes(bore_rings.get(z_cap_front), []), normal_z_sign=+1)
 
     # Absichtlich KEIN recalc_face_normals mehr: die expliziten normal_z_sign-Checks
     # in _fill_cap liefern korrekte Stirnflaechen-Normalen. recalc wuerde bei nicht
@@ -643,18 +676,11 @@ def create_internal_gear_mesh(
     ring_top    = _add_circle_layer(bm, 0.0, 0.0, thickness,  ring_outer_radius, ring_segs)
     _bridge_rings(bm, ring_bottom, ring_top)
 
-    def _fill_ring_cap(outer_loop, inner_loop, normal_z_sign):
-        result    = bmesh.ops.triangle_fill(
-            bm, edges=_collect_loop_edges(bm, [outer_loop, inner_loop]), use_beauty=True)
-        new_faces = result.get('faces', [])
-        wrong     = [f for f in new_faces if normal_z_sign * f.normal.z < 0.0]
-        if wrong:
-            bmesh.ops.reverse_faces(bm, faces=wrong)
-
-    _fill_ring_cap(ring_bottom, inner_bottom, normal_z_sign=-1)
-    _fill_ring_cap(ring_top,    inner_top,    normal_z_sign=+1)
-
-    # Kein globales recalc_face_normals — explizite Normalen-Checks oben sind robuster.
+    # Ring-Caps: Aussenring = ring_{bottom,top} (grosser Kreis),
+    # Inneres "Loch" = inner_{bottom,top} (Zahnprofil). tessellate_polygon fuellt
+    # zuverlaessig das Annular-Gebiet zwischen Aussenkreis und gezahntem Innenrand.
+    _tess_fill_cap(bm, ring_bottom, [inner_bottom], normal_z_sign=-1)
+    _tess_fill_cap(bm, ring_top,    [inner_top],    normal_z_sign=+1)
 
     if x_offset != 0.0 or z_offset != 0.0:
         bmesh.ops.translate(bm, vec=(x_offset, 0.0, z_offset), verts=bm.verts[:])
