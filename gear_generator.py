@@ -6,10 +6,10 @@ import mathutils
 bl_info = {
     "name": "Uni-Gear",
     "author": "Du + KI-Assistent",
-    "version": (7, 0, 0),
+    "version": (1, 0, 0),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Uni-Gear",
-    "description": "Zahnradsimulation mit Innenverzahnung, Kegelverzahnung, DIN-3960 und Paarung.",
+    "description": "Parametrischer Zahnrad-Generator: Evolvente, Schraeg-/Kegel-/Innenverzahnung, DIN-3960, Paarung.",
     "category": "Add Mesh",
 }
 
@@ -613,8 +613,20 @@ def create_gear_mesh(
 
 
 # ================================================================
-# HOHLRAD (Internal Gear / Ring Gear)
+# HOHLRAD (Internal Gear / Ring Gear) — ueber Boolean-Subtraktion
 # ================================================================
+#
+# Pragmatischer, robuster Ansatz:
+#   1. Tool-Zahnrad (Aussenverzahnung) mit den gewuenschten Ring-Parametern
+#      erzeugen — leicht hoeher als der Ring, damit es oben und unten
+#      sauber durch den Ringkoerper stoesst.
+#   2. Aussenzylinder mit benutzerdefiniertem Aussenradius erzeugen.
+#   3. Boolean DIFFERENCE auf dem Zylinder: Werkzeugrad wird ausgeschnitten.
+#   4. Tool-Objekt anschliessend loeschen.
+#
+# Vorteil: kein manuelles Cap-Filling fuer das stark nicht-konvexe Ringprofil
+# mehr noetig -> keine offenen Stirnflaechen, keine Ueberlappungen, keine
+# gefuellten Zahnluecken.
 
 def create_internal_gear_mesh(
     pitch_radius,
@@ -627,69 +639,88 @@ def create_internal_gear_mesh(
     profile_shift=0.0,
     x_offset=0.0,
 ):
-    """Erstellt ein Hohlrad (Ring Gear) mit nach innen zeigenden Zaehnen.
+    """Erstellt ein Hohlrad durch Boolean-Subtraktion.
 
-    ring_outer_radius: Aussenradius des Ringkoerpers (muss > Fusskreis).
+    ring_outer_radius: Aussenradius des Ringkoerpers (frei waehlbar, muss groesser
+                       als der Kopfkreis des eingebetteten Werkzeug-Zahnrads sein).
     """
-    profile_2d, root_radius_int, _tip_radius_int = build_internal_gear_profile(
+    module          = 2.0 * pitch_radius / teeth
+    tool_tip_radius = pitch_radius + (1.0 + profile_shift) * module
+    if ring_outer_radius <= tool_tip_radius * 1.05:
+        raise ValueError(
+            f"Ring-Aussenradius ({ring_outer_radius*1000:.1f} mm) muss deutlich groesser "
+            f"als der Kopfkreis der Verzahnung ({tool_tip_radius*1000:.1f} mm) sein "
+            f"(mind. 5% Wandstaerke).")
+
+    # --- 1. Tool-Zahnrad (etwas laenger fuer sauberen Durchstoss) ---
+    overhang       = max(1e-4, 0.02 * thickness)
+    tool_thickness = thickness + 2.0 * overhang
+    tool = create_gear_mesh(
         pitch_radius=pitch_radius,
         teeth=teeth,
+        thickness=tool_thickness,
         pressure_angle_deg=pressure_angle_deg,
+        helix_angle_deg=helix_angle_deg,
         profile_shift=profile_shift,
+        z_offset=z_offset - overhang,
+        x_offset=x_offset,
     )
+    tool.name = "HohlradTool"
+    tool.select_set(False)  # create_gear_mesh selektiert -> fuer Boolean entsperren
 
-    if ring_outer_radius <= root_radius_int * 1.02:
-        raise ValueError(
-            f"Ring-Aussenradius ({ring_outer_radius*1000:.1f} mm) muss groesser als "
-            f"Fusskreis der Innenverzahnung ({root_radius_int*1000:.1f} mm) sein.")
-
-    helix_angle = math.radians(helix_angle_deg)
-    layers      = _compute_helix_layers(thickness, helix_angle, pitch_radius)
-
-    def _segs_for_r(r):
-        return max(32, min(128, int(2.0 * math.pi * r / (0.005 * pitch_radius)) + 16))
-
-    mesh = bpy.data.meshes.new("Hohlrad")
-    obj  = bpy.data.objects.new("Hohlrad", mesh)
-    bpy.context.collection.objects.link(obj)
-    bm   = bmesh.new()
-
-    tan_helix = math.tan(helix_angle)
-
-    inner_layers = []
-    for k in range(layers + 1):
-        z       = thickness * k / layers
-        phi     = z * tan_helix / pitch_radius
-        cos_phi = math.cos(phi)
-        sin_phi = math.sin(phi)
-        inner_layers.append([
-            bm.verts.new((x * cos_phi - y * sin_phi, x * sin_phi + y * cos_phi, z))
-            for (x, y) in profile_2d
-        ])
-    for k in range(layers):
-        _bridge_rings(bm, inner_layers[k], inner_layers[k + 1], reverse_winding=True)
-    inner_bottom = inner_layers[0]
-    inner_top    = inner_layers[-1]
-
-    ring_segs   = _segs_for_r(ring_outer_radius)
-    ring_bottom = _add_circle_layer(bm, 0.0, 0.0, 0.0,       ring_outer_radius, ring_segs)
-    ring_top    = _add_circle_layer(bm, 0.0, 0.0, thickness,  ring_outer_radius, ring_segs)
-    _bridge_rings(bm, ring_bottom, ring_top)
-
-    # Ring-Caps: Aussenring = ring_{bottom,top} (grosser Kreis),
-    # Inneres "Loch" = inner_{bottom,top} (Zahnprofil). tessellate_polygon fuellt
-    # zuverlaessig das Annular-Gebiet zwischen Aussenkreis und gezahntem Innenrand.
-    _tess_fill_cap(bm, ring_bottom, [inner_bottom], normal_z_sign=-1)
-    _tess_fill_cap(bm, ring_top,    [inner_top],    normal_z_sign=+1)
-
+    # --- 2. Aussenzylinder (Ringkoerper) ---
+    segs   = min(256, max(64, int(2.0 * math.pi * ring_outer_radius / (0.005 * pitch_radius)) + 16))
+    mesh   = bpy.data.meshes.new("Hohlrad")
+    cyl    = bpy.data.objects.new("Hohlrad", mesh)
+    bpy.context.collection.objects.link(cyl)
+    bm_cyl = bmesh.new()
+    ring_bottom = [
+        bm_cyl.verts.new((ring_outer_radius * math.cos(2.0 * math.pi * i / segs),
+                          ring_outer_radius * math.sin(2.0 * math.pi * i / segs),
+                          0.0))
+        for i in range(segs)
+    ]
+    ring_top = [
+        bm_cyl.verts.new((ring_outer_radius * math.cos(2.0 * math.pi * i / segs),
+                          ring_outer_radius * math.sin(2.0 * math.pi * i / segs),
+                          thickness))
+        for i in range(segs)
+    ]
+    _bridge_rings(bm_cyl, ring_bottom, ring_top)
+    bm_cyl.faces.new(list(reversed(ring_bottom)))  # z=0 -> Normale -Z
+    bm_cyl.faces.new(ring_top)                     # z=thickness -> Normale +Z
     if x_offset != 0.0 or z_offset != 0.0:
-        bmesh.ops.translate(bm, vec=(x_offset, 0.0, z_offset), verts=bm.verts[:])
+        bmesh.ops.translate(bm_cyl, vec=(x_offset, 0.0, z_offset), verts=bm_cyl.verts[:])
+    bm_cyl.to_mesh(mesh)
+    bm_cyl.free()
 
-    bm.to_mesh(mesh)
-    bm.free()
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    return obj
+    # --- 3. Boolean DIFFERENCE auf dem Ringkoerper ---
+    bpy.ops.object.select_all(action="DESELECT")
+    cyl.select_set(True)
+    bpy.context.view_layer.objects.active = cyl
+    mod            = cyl.modifiers.new(name="RingGearCut", type="BOOLEAN")
+    mod.operation  = "DIFFERENCE"
+    mod.object     = tool
+    # EXACT-Solver ist deutlich robuster fuer schraegverzahnte und stark
+    # nicht-konvexe Werkzeug-Geometrien (ab Blender 2.91).
+    if hasattr(mod, "solver"):
+        mod.solver = "EXACT"
+    try:
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    except RuntimeError as exc:
+        # Fallback: FAST-Solver (weniger robust, aber in restriktiven Kontexten verfuegbar)
+        if hasattr(mod, "solver"):
+            mod.solver = "FAST"
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+        else:
+            raise
+
+    # --- 4. Tool loeschen ---
+    bpy.data.objects.remove(tool, do_unlink=True)
+
+    cyl.select_set(True)
+    bpy.context.view_layer.objects.active = cyl
+    return cyl
 
 
 # ================================================================

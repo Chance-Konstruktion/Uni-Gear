@@ -114,7 +114,7 @@ The gear is created directly as a new object in the scene.
 
 | Parameter             | Description                                                        | Default |
 |-----------------------|--------------------------------------------------------------------|---------|
-| Ring outer diameter   | Outer diameter of the ring body (must be > gear diameter)         | 30 mm   |
+| Ring outer diameter   | Outer diameter of the ring body (must be > tip circle + 5 % wall) | 30 mm   |
 
 ### DIN-3960 mode (optional)
 
