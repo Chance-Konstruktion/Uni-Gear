@@ -161,10 +161,6 @@ Offen:
 - [ ] Vorschau-Modus (Modal Operator mit Live-Preview)
 - [ ] Echte Trochoide am Zahnfuß (DIN 3960 vollständig)
 
-## Mitwirken
-
-Du hast Ideen für Verbesserungen?  
-Einfach einen Issue oder Pull Request öffnen – ich freue mich über jeden Beitrag! ❤️
 
 ## Lizenz
 
