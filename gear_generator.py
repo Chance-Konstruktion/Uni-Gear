@@ -6,7 +6,7 @@ import mathutils
 bl_info = {
     "name": "Uni-Gear",
     "author": "Du + KI-Assistent",
-    "version": (1, 0, 0),
+    "version": (1, 0, 1),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Uni-Gear",
     "description": "Parametrischer Zahnrad-Generator: Evolvente, Schraeg-/Kegel-/Innenverzahnung, DIN-3960, Paarung.",
@@ -158,10 +158,10 @@ def build_gear_profile(
     dedendum_coeff=1.25,
     profile_shift=0.0,
     use_trochoidal=False,
-    flank_samples=20,
-    fillet_samples=6,
-    tip_samples=4,
-    root_samples=4,
+    flank_samples=10,
+    fillet_samples=3,
+    tip_samples=2,
+    root_samples=2,
 ):
     """
     Erzeugt das geschlossene 2D-Profil eines Evolventen-Zahnrads.
@@ -235,10 +235,10 @@ def build_internal_gear_profile(
     addendum_coeff=1.0,
     dedendum_coeff=1.25,
     profile_shift=0.0,
-    flank_samples=20,
-    fillet_samples=6,
-    tip_samples=4,
-    root_samples=4,
+    flank_samples=10,
+    fillet_samples=3,
+    tip_samples=2,
+    root_samples=2,
 ):
     """
     Erzeugt das Innenprofil eines Hohlrads (Internal Gear / Ring Gear).
@@ -382,13 +382,16 @@ def _tess_fill_cap(bm, outer_loop, hole_loops, normal_z_sign):
 
 
 def _compute_helix_layers(thickness, helix_angle_rad, pitch_radius):
-    """Waehlt eine Anzahl von axialen Schichten fuer die Schraegverzahnung."""
+    """Waehlt eine Anzahl von axialen Schichten fuer die Schraegverzahnung.
+
+    Optimierung: ~6 Grad pro Schicht (vorher 3) und Mindestmenge 2 (vorher 4)
+    halbieren die Polyzahl bei vergleichbarem optischem Ergebnis.
+    """
     if abs(helix_angle_rad) < 1e-9 or thickness <= 0.0:
         return 1
     total_twist = abs(thickness * math.tan(helix_angle_rad) / pitch_radius)
-    # 3 Grad pro Schicht, mindestens 4 Schichten fuer weiche Verwindung.
-    layers = max(4, int(math.ceil(math.degrees(total_twist) / 3.0)))
-    return min(layers, 128)
+    layers = max(2, int(math.ceil(math.degrees(total_twist) / 6.0)))
+    return min(layers, 64)
 
 
 def create_gear_mesh(
@@ -487,7 +490,8 @@ def create_gear_mesh(
     layers = _compute_helix_layers(thickness, helix_angle, pitch_radius)
 
     def _segs_for_r(r):
-        return max(32, min(128, int(2.0 * math.pi * r / (0.005 * pitch_radius)) + 16))
+        # Zielsegmentlaenge ~2 % vom Teilkreisradius (vorher 0,5 %); 24..64 Segmente.
+        return max(24, min(64, int(2.0 * math.pi * r / (0.02 * pitch_radius)) + 8))
 
     mesh = bpy.data.meshes.new("Zahnrad")
     obj  = bpy.data.objects.new("Zahnrad", mesh)
@@ -719,7 +723,7 @@ def create_internal_gear_mesh(
     tool.select_set(False)  # create_gear_mesh selektiert -> fuer Boolean entsperren
 
     # --- 2. Aussenzylinder (Ringkoerper) ---
-    segs   = min(256, max(64, int(2.0 * math.pi * ring_outer_radius / (0.005 * pitch_radius)) + 16))
+    segs   = min(128, max(48, int(2.0 * math.pi * ring_outer_radius / (0.02 * pitch_radius)) + 8))
     mesh   = bpy.data.meshes.new("Hohlrad")
     cyl    = bpy.data.objects.new("Hohlrad", mesh)
     bpy.context.collection.objects.link(cyl)
@@ -798,13 +802,17 @@ def create_internal_gear_mesh(
 
 
 def _compute_bevel_layers(face_width, spiral_angle_rad):
-    """Anzahl axialer Schichten fuer die Kegelradmantelung."""
+    """Anzahl axialer Schichten fuer die Kegelradmantelung.
+
+    Optimierung: Basis 8 (vorher 16) und 4 Grad pro Spiralschritt (vorher 2)
+    erzeugen ein deutlich leichteres Mesh.
+    """
     if face_width <= 0.0:
         return 1
-    base = 16
+    base = 8
     if abs(spiral_angle_rad) > 1e-9:
-        base = max(base, int(math.degrees(abs(spiral_angle_rad)) / 2.0) + 16)
-    return min(base, 128)
+        base = max(base, int(math.degrees(abs(spiral_angle_rad)) / 4.0) + 8)
+    return min(base, 64)
 
 
 def create_bevel_gear_mesh(
@@ -893,7 +901,7 @@ def create_bevel_gear_mesh(
     # Zentrische Bohrung durch den gesamten Kegel (zylindrisch).
     bore_back = bore_front = None
     if has_bore:
-        bore_segs  = max(32, int(2.0 * math.pi * bore_radius / (0.005 * pitch_radius)) + 16)
+        bore_segs  = max(24, min(64, int(2.0 * math.pi * bore_radius / (0.02 * pitch_radius)) + 8))
         z_back     = 0.0
         z_front    = -face_width * cos_d
         bore_back  = _add_circle_layer(bm, 0.0, 0.0, z_back,  bore_radius, bore_segs)
@@ -1373,13 +1381,16 @@ class MESH_OT_create_gear(bpy.types.Operator):
                     return {"CANCELLED"}
             else:
                 center_dist = pitch_r + pair_r
+                # Aussenpaarung: zwei kaemmende Aussenraeder muessen entgegen-
+                # gesetzten Schraegungssinn haben (rechts- vs. linksgaengig),
+                # sonst kollidieren die Zahnflanken. Vorzeichen invertieren.
                 try:
                     create_gear_mesh(
                         pitch_radius=pair_r,
                         teeth=props.pair_teeth,
                         thickness=props.pair_thickness,
                         pressure_angle_deg=props.pressure_angle,
-                        helix_angle_deg=helix_deg,
+                        helix_angle_deg=-helix_deg,
                         bore_radius=p_bore_r,
                         hub_radius=p_hub_r,
                         hub_inner_radius=p_hub_ri,
