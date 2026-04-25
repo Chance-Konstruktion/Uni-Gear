@@ -23,7 +23,8 @@ Ideal for mechanical design, 3D printing, animation, technical visualization and
 - ✅ Bevel gears – straight- and spiral-toothed
 - ✅ Internal gears (ring gears / Hohlrad)
 - ✅ DIN-3960 mode: standard module (DIN 780), profile shift `x`, undercut warning
-- ✅ Gear pairing: counter-gear automatically placed at correct center distance
+- ✅ Gear pairing: counter-gear automatically placed at correct center distance (helical pairs use opposite hand)
+- ✅ Lean, print-friendly mesh – optimised for efficiency instead of unnecessarily dense polygons
 - ✅ Dedicated N-panel GUI (tab "Uni-Gear") with persistent settings
 - ✅ One-click creation with full undo support
 - ✅ Clean Blender Python code (bmesh)
@@ -137,12 +138,35 @@ The gear is created directly as a new object in the scene.
 | Bore on counter-gear      | Central bore on the counter-gear (configurable diameter)   | off     |
 | Hub on counter-gear       | Hub on the counter-gear (diameter, height, side, negative) | off     |
 
+## Changelog
+
+### v1.0.1 – Fix 1.0 (mesh optimisation & helix direction)
+
+- 🐛 **Helical pairing**: the auto-generated **external counter-gear** now
+  uses the **negated helix angle** (opposite hand). Two meshing external
+  helical spur gears must be left-hand vs. right-hand, otherwise the tooth
+  flanks collide. Internal pairing (ring gear + pinion) intentionally keeps
+  the same helix direction, since internal meshing requires both wheels to
+  share the same hand of helix.
+- ⚡ **Mesh efficiency** drastically improved (typically **3–5× fewer
+  polygons**):
+  - involute flank sampling: 20 → **10** points
+  - fillet / tip / root sampling reduced
+  - helix layers: ~6° per layer (was 3°), minimum 2 (was 4)
+  - bore / hub / hole segments: 32–128 → **24–64**
+  - bevel cone slices: base 16 → **8**
+  - ring outer cylinder: 64–256 → **48–128** segments
+
+  The result is visually almost identical, but loads noticeably faster,
+  is friendlier for 3D-print slicers, and significantly shortens the
+  Boolean operation when generating ring gears.
+
 ## Roadmap
 
 Done:
 
 - [x] True involute tooth shape
-- [x] Helical teeth
+- [x] Helical teeth – incl. correct opposite-hand pairing *(v1.0.1)*
 - [x] Automatic bores (central + decentral relief holes)
 - [x] Hub – one- or two-sided, combinable with the bore
 - [x] Gear stacking (several gears on one shaft, e.g. stepped gears)
@@ -151,6 +175,7 @@ Done:
 - [x] DIN-3960 mode: standard module (DIN 780), profile shift `x`, undercut warning
 - [x] Gear pairing (counter-gear at correct center distance, incl. bore/hub on counter-gear)
 - [x] Negative hub (hub pocket inside the gear body)
+- [x] Lean mesh (3–5× fewer polygons) *(v1.0.1)*
 
 Open:
 
@@ -160,6 +185,7 @@ Open:
 - [ ] Free-text module input (in addition to DIN dropdown)
 - [ ] Preview mode (Modal Operator with live preview)
 - [ ] True trochoidal root fillet (full DIN 3960)
+- [ ] Adjustable mesh quality (low / medium / high) in the N-panel
 
 ## Contributing
 

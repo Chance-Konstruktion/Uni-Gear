@@ -23,7 +23,8 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 - ✅ Kegelverzahnung (Bevel Gear) – gerad- und spiralverzahnt
 - ✅ Innenverzahnung (Hohlrad / Ring Gear)
 - ✅ DIN-3960-Modus: Normmodul (DIN 780), Profilverschiebung `x`, Unterschnitt-Warnung
-- ✅ Zahnrad-Paarung: Gegenrad automatisch auf korrektem Achsabstand
+- ✅ Zahnrad-Paarung: Gegenrad automatisch auf korrektem Achsabstand (Schrägverzahnung mit korrekter Gegenlauf-Richtung)
+- ✅ Schlankes, druckfreundliches Mesh – auf Effizienz statt unnötig hohe Polyzahl ausgelegt
 - ✅ Eigene GUI im N-Panel (Tab „Uni-Gear") mit erhaltener Einstellung
 - ✅ Ein-Klick-Erstellung mit Undo-Support
 - ✅ Sauberer Blender-Python-Code (bmesh)
@@ -137,12 +138,34 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 | Bohrung im Gegenrad  | Zentrische Bohrung im Gegenrad (Durchmesser einstellbar)     | aus          |
 | Nabe im Gegenrad     | Nabe im Gegenrad (Durchmesser, Höhe, Seite, negativ)         | aus          |
 
+## Changelog
+
+### v1.0.1 – Fix 1.0 (Mesh-Optimierung & Schrägungsrichtung)
+
+- 🐛 **Schrägverzahnte Paarung**: Das automatisch erzeugte **Aussen-Gegenrad**
+  bekommt jetzt den **negativen Schrägungswinkel** (entgegengesetzte
+  Verzahnungsrichtung). Zwei kämmende Aussen-Schrägstirnräder müssen
+  links- vs. rechtsgängig sein, sonst kollidieren die Zahnflanken.
+  Innen-Paarung (Hohlrad + Ritzel) behält bewusst gleiche Schrägungsrichtung,
+  da bei Inneneingriff beide Räder denselben Schrägungssinn brauchen.
+- ⚡ **Mesh-Effizienz** deutlich verbessert (oft **3–5× weniger Polygone**):
+  - Evolventen-Flanken-Sampling: 20 → **10** Stützpunkte
+  - Fillet-/Kopf-/Fusskreis-Sampling reduziert
+  - Helix-Schichten: ~6° pro Schicht (vorher 3°), Mindestmenge 2 (vorher 4)
+  - Bohrungs-/Naben-/Loch-Segmente: 32–128 → **24–64**
+  - Kegelrad-Mantelung: Basis 16 → **8** Schichten
+  - Hohlrad-Aussenring: 64–256 → **48–128** Segmente
+
+  Das Ergebnis ist optisch praktisch identisch, lädt aber spürbar
+  schneller, eignet sich besser für 3D-Druck-Slicer und reduziert die
+  Rechenzeit der Boolean-Operation beim Hohlrad erheblich.
+
 ## Roadmap (nächste Versionen)
 
 Erledigt:
 
 - [x] Echte Evolventen-Zahnform
-- [x] Schrägverzahnung (Helix)
+- [x] Schrägverzahnung (Helix) – inkl. korrekter Gegenlauf-Richtung bei Paarung *(v1.0.1)*
 - [x] Automatische Bohrung (zentrisch + dezentrale Entlastungslöcher)
 - [x] Nabe (Hub) – ein- oder beidseitig, kombinierbar mit der Bohrung
 - [x] Zahnradkombination / Stacking (mehrere Räder auf einer Achse, z. B. Stufenräder)
@@ -151,6 +174,7 @@ Erledigt:
 - [x] DIN-3960-Modus: Normmodul (DIN 780), Profilverschiebung `x`, Unterschnitt-Warnung
 - [x] Zahnrad-Paarung (Gegenrad auf korrektem Achsabstand, inkl. Bohrung/Nabe im Gegenrad)
 - [x] Negative Nabe (Nabentasche im Zahnradkörper)
+- [x] Schlankes Mesh (3–5× weniger Polygone) *(v1.0.1)*
 
 Offen:
 
@@ -160,6 +184,7 @@ Offen:
 - [ ] Modul-Eingabe als Freitexteingabe (zusätzlich zum DIN-Dropdown)
 - [ ] Vorschau-Modus (Modal Operator mit Live-Preview)
 - [ ] Echte Trochoide am Zahnfuß (DIN 3960 vollständig)
+- [ ] Einstellbare Mesh-Qualität (Low / Medium / High) im N-Panel
 
 
 ## Lizenz
