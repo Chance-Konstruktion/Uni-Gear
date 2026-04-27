@@ -122,7 +122,7 @@ The gear is created directly as a new object in the scene.
 
 | Parameter       | Description                                                            | Default |
 |-----------------|------------------------------------------------------------------------|---------|
-| Module (DIN 780)| Standard module m – sets pitch-circle diameter: d = m · z             | 1.0 mm  |
+| Module (DIN 780)| Standard module m – sets pitch-circle diameter: d = m · z (0.2 … 10 mm) | 1.0 mm |
 | Profile shift x | Profile shift coefficient per DIN 3960 (0 = standard tooth)           | 0.0     |
 
 > In DIN mode the pitch-circle diameter is computed automatically from module and tooth count.
@@ -135,10 +135,24 @@ The gear is created directly as a new object in the scene.
 | Counter-gear teeth        | Tooth count of the automatically generated counter-gear   | 16      |
 | Counter-gear thickness    | Axial thickness of the counter-gear                        | 5 mm    |
 | Counter-gear as ring gear | Generate counter-gear as internal gear                     | off     |
-| Bore on counter-gear      | Central bore on the counter-gear (configurable diameter)   | off     |
+| Bore on counter-gear      | Central bore on the counter-gear (configurable; default matches central bore) | off |
 | Hub on counter-gear       | Hub on the counter-gear (diameter, height, side, negative) | off     |
 
 ## Changelog
+
+### v1.0.2 – Final 1.0 (fine modules & unified bore defaults)
+
+- ➕ **Additional fine modules** in DIN-3960 mode: the module dropdown now
+  also includes **m = 0.2 / 0.25 / 0.3 / 0.4** (DIN 780). This enables
+  standards-compliant generation of very small gears for fine mechanics,
+  model making and micro gearboxes. The module range now spans
+  **0.2 mm to 10 mm**.
+- 🔧 **Unified bore default**: the default diameter of the bore on the
+  counter-gear (gear pairing) now matches the default of the main gear's
+  central bore (**6 mm** instead of 4 mm). Main and counter-gear therefore
+  fit the same shaft out of the box.
+- 🏁 **Final 1.0 release** – the 1.0 feature set is now complete and
+  stabilised.
 
 ### v1.0.1 – Fix 1.0 (mesh optimisation & helix direction)
 

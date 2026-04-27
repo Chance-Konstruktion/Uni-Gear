@@ -6,7 +6,7 @@ import mathutils
 bl_info = {
     "name": "Uni-Gear",
     "author": "Du + KI-Assistent",
-    "version": (1, 0, 1),
+    "version": (1, 0, 2),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Uni-Gear",
     "description": "Parametrischer Zahnrad-Generator: Evolvente, Schraeg-/Kegel-/Innenverzahnung, DIN-3960, Paarung.",
@@ -1096,11 +1096,13 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         name="Modul (DIN 780)",
         description="Normmodul nach DIN 780 – bestimmt Zahngroesse und Teilkreisdurchmesser",
         items=[
-            ("0.5",  "m = 0,5",  ""), ("0.6",  "m = 0,6",  ""), ("0.7",  "m = 0,7",  ""),
-            ("0.8",  "m = 0,8",  ""), ("1.0",  "m = 1,0",  ""), ("1.25", "m = 1,25", ""),
-            ("1.5",  "m = 1,5",  ""), ("2.0",  "m = 2,0",  ""), ("2.5",  "m = 2,5",  ""),
-            ("3.0",  "m = 3,0",  ""), ("4.0",  "m = 4,0",  ""), ("5.0",  "m = 5,0",  ""),
-            ("6.0",  "m = 6,0",  ""), ("8.0",  "m = 8,0",  ""), ("10.0", "m = 10,0", ""),
+            ("0.2",  "m = 0,2",  ""), ("0.25", "m = 0,25", ""), ("0.3",  "m = 0,3",  ""),
+            ("0.4",  "m = 0,4",  ""), ("0.5",  "m = 0,5",  ""), ("0.6",  "m = 0,6",  ""),
+            ("0.7",  "m = 0,7",  ""), ("0.8",  "m = 0,8",  ""), ("1.0",  "m = 1,0",  ""),
+            ("1.25", "m = 1,25", ""), ("1.5",  "m = 1,5",  ""), ("2.0",  "m = 2,0",  ""),
+            ("2.5",  "m = 2,5",  ""), ("3.0",  "m = 3,0",  ""), ("4.0",  "m = 4,0",  ""),
+            ("5.0",  "m = 5,0",  ""), ("6.0",  "m = 6,0",  ""), ("8.0",  "m = 8,0",  ""),
+            ("10.0", "m = 10,0", ""),
         ],
         default="1.0",
     )
@@ -1133,7 +1135,7 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
     )
     pair_bore_diameter: bpy.props.FloatProperty(
         name="Bohrungsdurchmesser",
-        default=0.004, min=0.0002, max=2.0, unit="LENGTH",
+        default=0.006, min=0.0002, max=2.0, unit="LENGTH",
     )
     # Gegenrad-Nabe
     pair_use_hub: bpy.props.BoolProperty(

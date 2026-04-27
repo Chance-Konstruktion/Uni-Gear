@@ -122,7 +122,7 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 | Parameter            | Beschreibung                                                           | Standardwert |
 |----------------------|------------------------------------------------------------------------|--------------|
-| Modul (DIN 780)      | Normmodul m – bestimmt Teilkreisdurchmesser: d = m · z                | 1,0 mm       |
+| Modul (DIN 780)      | Normmodul m – bestimmt Teilkreisdurchmesser: d = m · z (0,2 … 10 mm)  | 1,0 mm       |
 | Profilverschiebung x | Profilverschiebungsfaktor nach DIN 3960 (0 = Normverzahnung)          | 0,0          |
 
 > Im DIN-Modus wird der Teilkreisdurchmesser automatisch aus Modul und Zähnezahl berechnet.
@@ -135,10 +135,25 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 | Zähnezahl Gegenrad   | Zähnezahl des automatisch erzeugten Gegenrads                | 16           |
 | Dicke Gegenrad       | Axiale Dicke des Gegenrads                                    | 5 mm         |
 | Gegenrad als Hohlrad | Gegenrad als Innenverzahnung erzeugen                        | aus          |
-| Bohrung im Gegenrad  | Zentrische Bohrung im Gegenrad (Durchmesser einstellbar)     | aus          |
+| Bohrung im Gegenrad  | Zentrische Bohrung im Gegenrad (Durchmesser einstellbar, Standard wie zentrische Bohrung) | aus |
 | Nabe im Gegenrad     | Nabe im Gegenrad (Durchmesser, Höhe, Seite, negativ)         | aus          |
 
 ## Changelog
+
+### v1.0.2 – Finale 1.0 (Feinmodule & einheitliche Bohrungs-Defaults)
+
+- ➕ **Zusätzliche Feinmodule** im DIN-3960-Modus: das Modul-Dropdown
+  enthält jetzt auch **m = 0,2 / 0,25 / 0,3 / 0,4** (DIN 780). Damit lassen
+  sich besonders kleine Zahnräder für Feinmechanik, Modellbau und
+  Mikrogetriebe normgerecht erzeugen. Modulauswahl reicht nun von
+  **0,2 mm bis 10 mm**.
+- 🔧 **Einheitlicher Bohrungs-Standardwert**: der Standardwert für die
+  Bohrung im Gegenrad (Zahnrad-Paarung) entspricht nun dem Standardwert
+  der zentrischen Bohrung des Hauptrads (**6 mm** statt zuvor 4 mm).
+  So passen Haupt- und Gegenrad ohne manuelle Nacharbeit auf dieselbe
+  Welle.
+- 🏁 **Finale Version 1.0** – Funktionsumfang von 1.0 ist abgeschlossen
+  und stabilisiert.
 
 ### v1.0.1 – Fix 1.0 (Mesh-Optimierung & Schrägungsrichtung)
 
