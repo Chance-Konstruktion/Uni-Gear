@@ -552,9 +552,17 @@ def create_gear_mesh(
             _bridge_rings(bm, hub_front_bot_inner, hub_front_top_inner, reverse_winding=True)
 
     # --- Bohrung (erstreckt sich durch Nabe falls positiv; bei negativer Nabe
-    # geht die Bohrung nur durch den Zahnradkoerper) ---
+    # endet die Bohrung am Boden der Nabentasche, da innerhalb der Tasche kein
+    # Material existiert) ---
     # Wir benoetigen Bohrungsringe bei allen Stirnflaechen-Z-Werten fuer triangle_fill.
-    if hub_negative or has_hollow_hub:
+    if hub_negative:
+        # Negative Nabe (Tasche): Bohrungswand nur dort erzeugen, wo tatsaechlich
+        # Material vorhanden ist. Innerhalb der Tasche darf kein Bohrungsmesh
+        # entstehen, sonst ragt eine freistehende Bohrungswand in den
+        # ausgesparten Bereich (Bug bis 1.0).
+        bore_z_start = (+hub_height)             if has_hub_back  else 0.0
+        bore_z_end   = (thickness - hub_height)  if has_hub_front else thickness
+    elif has_hollow_hub:
         # Hohle Nabe: Bohrung geht nur durch den Zahnradkoerper; die Nabenroehre
         # hat bereits ihr eigenes (groesseres) Innenloch.
         bore_z_start = 0.0
@@ -565,14 +573,13 @@ def create_gear_mesh(
     bore_rings   = {}  # {z_value: [BMVerts]}
     if has_bore:
         bore_segs    = _segs_for_r(bore_radius)
-        bore_z_set   = {bore_z_start, 0.0, thickness, bore_z_end}
-        if hub_negative:
-            # Bei negativer Nabe braucht der Boden der Nabentasche einen
-            # Bohrungsring auf seinem Z-Level (fuer den Ringschnitt beim Cap).
-            if has_hub_back:
-                bore_z_set.add(+hub_height)
-            if has_hub_front:
-                bore_z_set.add(thickness - hub_height)
+        bore_z_set   = {bore_z_start, bore_z_end}
+        # z=0 / z=thickness gehoeren nur dann zur Bohrung, wenn sie innerhalb
+        # der Bohrungslaenge liegen (bei negativer Nabe liegt die Bohrung
+        # zwischen den Taschenboeden, nicht an den Aussenstirnseiten).
+        for z in (0.0, thickness):
+            if bore_z_start <= z <= bore_z_end:
+                bore_z_set.add(z)
         bore_z_levels = sorted(bore_z_set)
         for z in bore_z_levels:
             bore_rings[z] = _add_circle_layer(bm, 0.0, 0.0, z, bore_radius, bore_segs)
@@ -931,6 +938,49 @@ def create_bevel_gear_mesh(
 # PROPERTIES (PropertyGroup -> umgeht 'readonly state' Fehler)
 # ================================================================
 
+def _ring_outer_min_diameter(props):
+    """Berechnet den Mindest-Aussendurchmesser des Hohlrad-Rings aus den
+    aktuellen Verzahnungsparametern.
+
+    Untergrenze: Kopfkreis * 1.05 (technische Validierung in
+    create_internal_gear_mesh) UND mindestens 105% des Teilkreisdurchmessers
+    (Anwenderforderung). Fuer eine robuste Default-Wandstaerke wird der
+    Kopfkreis mit Faktor 1.15 angesetzt."""
+    if props.use_din3960:
+        m = float(props.din_module) * 0.001
+        pitch_d = m * props.teeth
+        x = props.din_profile_shift
+    else:
+        pitch_d = props.pitch_diameter
+        m = pitch_d / max(props.teeth, 1)
+        x = 0.0
+    tip_d = pitch_d + 2.0 * (1.0 + x) * m
+    return max(tip_d * 1.15, pitch_d * 1.05)
+
+
+def _update_ring_outer_min(self, context):
+    """Hebt den Ring-Aussendurchmesser automatisch an, wenn das Zahnrad so
+    veraendert wurde, dass der aktuelle Wert unterhalb der Mindestgrenze
+    liegt. Verkleinert nie - dickere Waende bleiben dem Anwender ueberlassen."""
+    if not self.use_internal:
+        return
+    min_d = _ring_outer_min_diameter(self)
+    if self.internal_ring_diameter < min_d:
+        # __setitem__ umgeht den eigenen Update-Callback und vermeidet so
+        # rekursive Property-Updates / 'readonly'-Konflikte beim UI-Drawing.
+        self["internal_ring_diameter"] = min_d
+
+
+def _update_ring_outer_clamp(self, context):
+    """Klemmt den manuell gesetzten Ring-Aussendurchmesser an die
+    Mindestgrenze, sobald die Innenverzahnung aktiv ist."""
+    if not self.use_internal:
+        return
+    min_d = _ring_outer_min_diameter(self)
+    if self.internal_ring_diameter < min_d:
+        self["internal_ring_diameter"] = min_d
+
+
 class GearGeneratorProperties(bpy.types.PropertyGroup):
     # --- Basisgeometrie ---
     # UI arbeitet mit Durchmessern; die interne Berechnung nutzt weiterhin Radien.
@@ -938,9 +988,11 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         name="Teilkreisdurchmesser",
         description="Teilkreisdurchmesser des Zahnrads. Im DIN-Modus automatisch aus Modul und Zaehnezahl berechnet.",
         default=0.020, min=0.002, max=2.0, unit="LENGTH",
+        update=_update_ring_outer_min,
     )
     teeth: bpy.props.IntProperty(
         name="Zaehnezahl", default=24, min=6, max=200,
+        update=_update_ring_outer_min,
     )
     thickness: bpy.props.FloatProperty(
         name="Dicke", description="Zahnbreite (axiale Dicke)",
@@ -1079,11 +1131,14 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         name="Innenverzahnung (Hohlrad)",
         description="Erzeugt ein Hohlrad (Innenverzahnung) statt eines Aussen-Stirnrads",
         default=False,
+        update=_update_ring_outer_min,
     )
     internal_ring_diameter: bpy.props.FloatProperty(
         name="Ring-Aussendurchmesser",
-        description="Aussendurchmesser des Hohlrad-Rings (muss groesser als Kopfkreis der Verzahnung sein)",
+        description="Aussendurchmesser des Hohlrad-Rings (wird automatisch an die "
+                    "Verzahnungsgroesse angepasst; mind. 105% Teilkreis bzw. 115% Kopfkreis)",
         default=0.030, min=0.004, max=2.0, unit="LENGTH",
+        update=_update_ring_outer_clamp,
     )
 
     # --- DIN-3960-Modus ---
@@ -1091,6 +1146,7 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         name="DIN-3960-Modus",
         description="Genormtes Modul (DIN 780) und Profilverschiebung x aktivieren",
         default=False,
+        update=_update_ring_outer_min,
     )
     din_module: bpy.props.EnumProperty(
         name="Modul (DIN 780)",
@@ -1105,11 +1161,13 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
             ("10.0", "m = 10,0", ""),
         ],
         default="1.0",
+        update=_update_ring_outer_min,
     )
     din_profile_shift: bpy.props.FloatProperty(
         name="Profilverschiebung x",
         description="Profilverschiebungsfaktor (DIN 3960). 0 = Normverzahnung",
         default=0.0, min=-0.8, max=0.8, step=5,
+        update=_update_ring_outer_min,
     )
 
     # --- Zahnrad-Paarung ---
@@ -1613,6 +1671,9 @@ class VIEW3D_PT_gear_internal(_GearSubPanel):
         col = layout.column()
         col.enabled = props.use_internal and not props.use_bevel
         col.prop(props, "internal_ring_diameter")
+        if props.use_internal and not props.use_bevel:
+            min_d_mm = _ring_outer_min_diameter(props) * 1000.0
+            col.label(text=f"→ Mindest-Aussendurchmesser: {min_d_mm:.2f} mm", icon="INFO")
 
 
 class VIEW3D_PT_gear_pairing(_GearSubPanel):
