@@ -1,4 +1,4 @@
-# Uni-Gear – Parametric Gear Generato
+# Uni-Gear – Parametric Gear Generator
 
 *In anderer Sprache lesen: **Deutsch** · [English](README_EN.md)*
 
