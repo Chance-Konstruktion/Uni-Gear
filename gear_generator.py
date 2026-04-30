@@ -1238,6 +1238,14 @@ class MESH_OT_create_gear(bpy.types.Operator):
     def execute(self, context):
         props = context.scene.gear_generator
 
+        # Zahnrad-Erzeugung benoetigt Object Mode; ggfs. aus Edit/Sculpt/... wechseln.
+        if context.mode != "OBJECT" and context.active_object is not None:
+            try:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            except RuntimeError as exc:
+                self.report({"ERROR"}, f"Wechsel in Objektmodus fehlgeschlagen: {exc}")
+                return {"CANCELLED"}
+
         # UI-Werte sind Durchmesser; interne Berechnung erwartet Radien -> halbieren.
         pitch_r = props.pitch_diameter * 0.5
 
