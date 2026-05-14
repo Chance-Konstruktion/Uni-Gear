@@ -175,7 +175,7 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
   schneller, eignet sich besser für 3D-Druck-Slicer und reduziert die
   Rechenzeit der Boolean-Operation beim Hohlrad erheblich.
 
-## Roadmap (nächste Versionen)
+## Roadmap
 
 Erledigt:
 
@@ -190,17 +190,6 @@ Erledigt:
 - [x] Zahnrad-Paarung (Gegenrad auf korrektem Achsabstand, inkl. Bohrung/Nabe im Gegenrad)
 - [x] Negative Nabe (Nabentasche im Zahnradkörper)
 - [x] Schlankes Mesh (3–5× weniger Polygone) *(v1.0.1)*
-
-Offen:
-
-- [ ] Flankenspiel (Backlash)
-- [ ] Zahnstange (Rack)
-- [ ] Automatisches Rigging (Rotation via Driver)
-- [ ] Modul-Eingabe als Freitexteingabe (zusätzlich zum DIN-Dropdown)
-- [ ] Vorschau-Modus (Modal Operator mit Live-Preview)
-- [ ] Echte Trochoide am Zahnfuß (DIN 3960 vollständig)
-- [ ] Einstellbare Mesh-Qualität (Low / Medium / High) im N-Panel
-
 
 ## Lizenz
 
