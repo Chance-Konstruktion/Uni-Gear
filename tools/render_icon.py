@@ -271,7 +271,12 @@ def nicht_leer(ziel: pathlib.Path, mindestens=0.02) -> None:
 #: Fassung. Getrennt und nicht statt der grossen: die grosse gehoert in
 #: die README, das Icon wird ohnehin winzig angezeigt.
 AVATAR = WURZEL / "avatar.png"
-AVATAR_KANTE = 512
+#: 384 und nicht 512. Bei 512 kam die Riemenscheibe auf 199,9 KiB --
+#: einhundert Byte unter der Grenze. Das haelt keine Aenderung am
+#: Material aus, und ein Job, der wegen einer Spiegelung mehr rot wird,
+#: sagt nichts ueber das Projekt aus. Angezeigt wird das Icon ohnehin
+#: mit ein paar Dutzend Pixeln.
+AVATAR_KANTE = 384
 AVATAR_GRENZE = 200 * 1024
 
 
