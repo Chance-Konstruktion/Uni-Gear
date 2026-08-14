@@ -1,0 +1,95 @@
+# CI fuer Uni-Gear.
+#
+# gear_generator.py importiert bpy auf Modulebene -- ausserhalb von Blender
+# laesst sich die Datei also nicht einmal importieren. Ein reiner
+# Syntax-Check waere deshalb das Einzige, was ohne Blender ginge, und der
+# faengt genau die Fehler nicht, die hier wehtun: ein falscher
+# Property-Typ, eine vergessene Registrierung, ein Klassenname, den Blender
+# ablehnt. Das merkt man sonst erst, wenn das Addon im Menue fehlt.
+#
+# Also laeuft hier echtes Blender headless: Addon installieren, aktivieren,
+# nachsehen ob der Operator da ist.
+
+stages:
+  - test
+
+variables:
+  BLENDER_SERIE: "4.5"
+
+addon-laedt:
+  stage: test
+  image: debian:bookworm-slim
+  timeout: 30m
+  cache:
+    key: blender-4.5
+    paths:
+      - .blender-bin/
+    # Ohne "always" wird der Cache bei rotem Job nicht angelegt -- also
+    # ausgerechnet dann nicht, wenn man mehrere Anlaeufe braucht.
+    when: always
+  before_script:
+    - apt-get update -qq
+    # Auch --background laedt beim Start die GUI-Bibliotheken.
+    - apt-get install -y -qq curl xz-utils ca-certificates
+        libgl1 libegl1 libglib2.0-0 libsm6 libice6
+        libx11-6 libxi6 libxxf86vm1 libxfixes3 libxrender1 libxext6
+        libxrandr2 libxinerama1 libxcursor1 libxkbcommon0
+        libwayland-client0 libdbus-1-3 libfontconfig1 libfreetype6
+    - |
+      if [ ! -x .blender-bin/blender ]; then
+        BASIS="https://download.blender.org/release/Blender${BLENDER_SERIE}/"
+        DATEI=$(curl -sSL "$BASIS" \
+          | grep -o "blender-${BLENDER_SERIE}\.[0-9]*-linux-x64\.tar\.xz" \
+          | sort -V | tail -1)
+        echo "Lade $DATEI"
+        curl -sSL -o blender.tar.xz "${BASIS}${DATEI}"
+        mkdir -p .blender-bin
+        tar -xf blender.tar.xz --strip-components=1 -C .blender-bin
+        rm -f blender.tar.xz
+      else
+        echo "Blender aus dem Cache"
+      fi
+    - .blender-bin/blender --version | head -2
+  script:
+    - export HOME="$CI_PROJECT_DIR/.blender-home"
+    - mkdir -p "$HOME"
+    - |
+      cat > pruefen.py <<'PY'
+      """Installiert Uni-Gear in Blender und sieht nach, ob es ankommt."""
+      import sys
+      import addon_utils
+      import bpy
+
+      MODUL = "gear_generator"
+
+      bpy.ops.preferences.addon_install(filepath=sys.argv[-1], overwrite=True)
+      bpy.ops.preferences.addon_enable(module=MODUL)
+
+      # addon_enable schluckt Fehler beim register() still -- deshalb nicht
+      # dem Aufruf glauben, sondern nachsehen, ob das Addon danach wirklich
+      # als aktiviert gefuehrt wird.
+      aktiv = [m.__name__ for m in addon_utils.modules()
+               if addon_utils.check(m.__name__)[1]]
+      if MODUL not in aktiv:
+          raise SystemExit(f"FEHLER: {MODUL} ist nach dem Aktivieren nicht aktiv")
+
+      modul = next(m for m in addon_utils.modules() if m.__name__ == MODUL)
+      info = getattr(modul, "bl_info", {})
+      version = ".".join(str(z) for z in info.get("version", ()))
+      print(f"OK - {info.get('name')} {version} registriert")
+
+      # Ein Addon, das sich sauber aktivieren laesst, aber keinen einzigen
+      # Operator anmeldet, hilft im Menue niemandem.
+      operatoren = [n for n in dir(bpy.types)
+                    if n.upper().startswith(("MESH_OT", "OBJECT_OT"))
+                    and "gear" in n.lower()]
+      panels = [n for n in dir(bpy.types) if "gear" in n.lower() and "PT" in n]
+      print(f"Operatoren: {operatoren}")
+      print(f"Panels    : {panels}")
+      if not operatoren and not panels:
+          raise SystemExit("FEHLER: weder Operator noch Panel registriert")
+
+      bpy.ops.preferences.addon_disable(module=MODUL)
+      print("OK - laesst sich auch wieder deaktivieren")
+      PY
+    - .blender-bin/blender --background --python pruefen.py -- "$CI_PROJECT_DIR/gear_generator.py"
