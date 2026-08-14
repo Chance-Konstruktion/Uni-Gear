@@ -111,10 +111,14 @@ icon:
     - export HOME="$CI_PROJECT_DIR/.blender-home"
     - mkdir -p "$HOME"
     - .blender-bin/blender --background --python tools/render_icon.py
-    - test -s icon.png || (echo "kein Bild entstanden" && exit 1)
-    - ls -l icon.png
+    # Das Skript prueft selbst, ob ueberhaupt etwas im Bild steht und ob
+    # das Icon unter GitLabs 200-KiB-Grenze bleibt. Hier bleibt nur die
+    # Frage, ob beide Dateien da sind.
+    - test -s icon.png && test -s avatar.png
+    - ls -l icon.png avatar.png
   artifacts:
     when: always
     expire_in: 90 days
     paths:
       - icon.png
+      - avatar.png

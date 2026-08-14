@@ -266,6 +266,41 @@ def nicht_leer(ziel: pathlib.Path, mindestens=0.02) -> None:
             % (bedeckt * 100.0))
 
 
+#: GitLab nimmt fuer ein Projekt-Icon hoechstens 200 KiB an. Das Bild in
+#: voller Groesse liegt weit darueber, also entsteht daneben eine kleine
+#: Fassung. Getrennt und nicht statt der grossen: die grosse gehoert in
+#: die README, das Icon wird ohnehin winzig angezeigt.
+AVATAR = WURZEL / "avatar.png"
+AVATAR_KANTE = 512
+AVATAR_GRENZE = 200 * 1024
+
+
+def kleine_fassung(quelle: pathlib.Path, ziel: pathlib.Path) -> None:
+    """Verkleinern mit Blenders eigenen Mitteln.
+
+    Pillow waere der naheliegende Weg, wuerde aber eine Abhaengigkeit in
+    ein Bild holen, das sonst nur Blender enthaelt. Blender kann es
+    selbst, und das Ergebnis wandert durch dieselbe Farbverwaltung wie
+    das grosse Bild.
+    """
+    bild = bpy.data.images.load(str(quelle))
+    try:
+        bild.scale(AVATAR_KANTE, AVATAR_KANTE)
+        bild.filepath_raw = str(ziel)
+        bild.file_format = "PNG"
+        bild.save()
+    finally:
+        bpy.data.images.remove(bild)
+
+    groesse = ziel.stat().st_size
+    print("%s: %.1f KiB" % (ziel.name, groesse / 1024.0))
+    if groesse > AVATAR_GRENZE:
+        raise SystemExit(
+            "Das Icon ist mit %.1f KiB zu gross -- GitLab nimmt hoechstens "
+            "%d KiB. AVATAR_KANTE verkleinern."
+            % (groesse / 1024.0, AVATAR_GRENZE // 1024))
+
+
 def rendere(ziel: pathlib.Path) -> None:
     szene = bpy.context.scene
     szene.render.engine = "CYCLES"
@@ -303,6 +338,7 @@ def main() -> None:
     passe_ein(kamera(weite), [rad])
     rendere(AUSGABE)
     nicht_leer(AUSGABE)
+    kleine_fassung(AUSGABE, AVATAR)
     print("geschrieben: %s (Ausdehnung %.3f)" % (AUSGABE, weite))
 
 
