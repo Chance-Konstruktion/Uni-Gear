@@ -97,10 +97,7 @@ def kanten_brechen(obj, breite) -> None:
     fase.segments = 2
     fase.limit_method = "ANGLE"
     fase.angle_limit = math.radians(30)
-    glatt = obj.modifiers.new("Glaetten", "WEIGHTED_NORMAL")
-    glatt.keep_sharp = True
-    for flaeche in obj.data.polygons:
-        flaeche.use_smooth = True
+    weich(obj)
 
 
 def ausdehnung(obj) -> float:
@@ -130,6 +127,53 @@ def licht(name, richtung, staerke, groesse, weite):
     return lampe
 
 
+def weich(obj) -> None:
+    """Glatt nur dort, wo das Teil rund ist -- Kanten bleiben Kanten.
+
+    Der erste Anlauf schaltete jede Flaeche glatt. Bei einer Riemenscheibe
+    ging das gut, weil sie ein Rotationskoerper ist; beim Zahnrad wurde
+    die Stirnflaeche zu einem einzigen weichen Verlauf, der das Licht
+    breit einfing und das Teil ueberstrahlen liess. Ein Zahnrad ist aber
+    kantig, und genau die Kanten sind seine Form.
+    """
+    bpy.context.view_layer.objects.active = obj
+    obj.select_set(True)
+    try:
+        bpy.ops.object.shade_auto_smooth(angle=math.radians(30))
+    except (AttributeError, RuntimeError):
+        # Aeltere Blender kennen den Operator nicht. Flach ist dort die
+        # ehrlichere Wahl: lieber facettiert als verschmiert.
+        for flaeche in obj.data.polygons:
+            flaeche.use_smooth = False
+    obj.select_set(False)
+
+
+def passe_ein(kam, objekte) -> None:
+    """Ausschnitt aus dem berechnen, was die Kamera wirklich sieht.
+
+    Vorher wurde die groesste Weltkoordinate genommen und mit einem
+    Faktor multipliziert. Das ist zweimal ungenau: es misst diagonal
+    statt in Blickrichtung, und es rechnet ab dem Nullpunkt statt ab der
+    Mitte des Teils. Beides zusammen liess die Scheibe auf ein Viertel
+    des Bildes schrumpfen.
+
+    Hier werden stattdessen die Ecken in die Kameraebene projiziert. In
+    einer orthografischen Ansicht bleibt diese Projektion gleich, wenn
+    man die Kamera in ihrer eigenen Ebene verschiebt -- das Nachzentrieren
+    am Ende aendert den Ausschnitt also nicht, sondern nur die Lage.
+    """
+    hinein = kam.matrix_world.inverted()
+    xs, ys = [], []
+    for obj in objekte:
+        for ecke in obj.bound_box:
+            punkt = hinein @ (obj.matrix_world @ mathutils.Vector(ecke))
+            xs.append(punkt.x)
+            ys.append(punkt.y)
+    kam.data.ortho_scale = max(max(xs) - min(xs), max(ys) - min(ys)) * 1.12
+    kam.location = kam.matrix_world @ mathutils.Vector(
+        ((max(xs) + min(xs)) / 2.0, (max(ys) + min(ys)) / 2.0, 0.0))
+
+
 def richte_auf(objekt, ziel) -> None:
     richtung = mathutils.Vector(ziel) - objekt.location
     objekt.rotation_euler = richtung.to_track_quat("-Z", "Y").to_euler()
@@ -143,9 +187,8 @@ def kamera(weite):
     und die Neigung zeigt trotzdem die Dicke -- das eine, was eine
     Draufsicht nicht zeigen kann.
 
-    Der Ausschnitt wird eingepasst statt geraten: die groesste Ausdehnung
-    mal 2,55 laesst genug Rand, dass der runde Zuschnitt eines Icons die
-    Zaehne nicht anschneidet.
+    Nur die Lage wird hier gesetzt; den Ausschnitt bestimmt danach
+    ``passe_ein`` aus dem, was tatsaechlich im Bild landet.
     """
     daten = bpy.data.cameras.new("Kamera")
     daten.type = "ORTHO"
@@ -201,7 +244,7 @@ def main() -> None:
     licht("Aufhellung", (-1.4, -0.6, 0.6), 40.0, 3.5, weite)
     licht("Kante", (-0.45, 1.4, 0.9), 65.0, 1.9, weite)
     welt()
-    kamera(weite)
+    passe_ein(kamera(weite), [rad])
     rendere(AUSGABE)
     print("geschrieben: %s (Ausdehnung %.3f)" % (AUSGABE, weite))
 
