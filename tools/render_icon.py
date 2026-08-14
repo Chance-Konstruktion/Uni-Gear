@@ -211,6 +211,15 @@ def kamera(weite):
     daten = bpy.data.cameras.new("Kamera")
     daten.type = "ORTHO"
     daten.ortho_scale = weite * 2.55
+    # Die Nahebene mitwachsen lassen.
+    #
+    # Blender schneidet ab Werk alles weg, was naeher als 0,1 Meter an
+    # der Kamera liegt. Eine Riemenscheibe misst vierzig Millimeter, die
+    # Kamera steht also fuenf Zentimeter davor -- und das Bild blieb
+    # vollstaendig leer. Beim Zahnrad in Metern fiel es nie auf, weil die
+    # Kamera dort knapp drei Meter entfernt steht.
+    daten.clip_start = weite * 0.01
+    daten.clip_end = weite * 100.0
     kam = bpy.data.objects.new("Kamera", daten)
     bpy.context.collection.objects.link(kam)
     kam.location = (2.6 * weite, -2.6 * weite, 2.35 * weite)
