@@ -12,12 +12,15 @@
 
 stages:
   - test
+  - bild
 
 variables:
   BLENDER_SERIE: "4.5"
 
-addon-laedt:
-  stage: test
+# Beide Jobs brauchen dasselbe Blender. Einmal beschrieben, zweimal
+# benutzt -- sonst laeuft die Fassung im Bildjob irgendwann auseinander,
+# und dann rendert etwas anderes als das, was geprueft wurde.
+.mit-blender:
   image: debian:bookworm-slim
   timeout: 30m
   cache:
@@ -50,6 +53,10 @@ addon-laedt:
         echo "Blender aus dem Cache"
       fi
     - .blender-bin/blender --version | head -2
+
+addon-laedt:
+  extends: .mit-blender
+  stage: test
   script:
     - export HOME="$CI_PROJECT_DIR/.blender-home"
     - mkdir -p "$HOME"
@@ -93,3 +100,21 @@ addon-laedt:
       print("OK - laesst sich auch wieder deaktivieren")
       PY
     - .blender-bin/blender --background --python pruefen.py -- "$CI_PROJECT_DIR/gear_generator.py"
+
+# Das Projektbild entsteht aus dem Add-on selbst -- gerendert wird, was
+# create_gear_mesh baut, nicht ein nachgestelltes Zahnrad. Damit ist das
+# Bild nebenbei ein Beweis: bricht die Verzahnung, faellt der Job aus.
+icon:
+  extends: .mit-blender
+  stage: bild
+  script:
+    - export HOME="$CI_PROJECT_DIR/.blender-home"
+    - mkdir -p "$HOME"
+    - .blender-bin/blender --background --python tools/render_icon.py
+    - test -s icon.png || (echo "kein Bild entstanden" && exit 1)
+    - ls -l icon.png
+  artifacts:
+    when: always
+    expire_in: 90 days
+    paths:
+      - icon.png
