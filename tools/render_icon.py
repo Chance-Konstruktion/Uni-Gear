@@ -74,7 +74,7 @@ def baue_zahnrad(modul):
     return obj
 
 
-def material(obj, farbe, rauheit=0.32):
+def material(obj, farbe, rauheit=0.45):
     mat = bpy.data.materials.new("Metall")
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes["Principled BSDF"]
@@ -168,13 +168,25 @@ def passe_ein(kam, objekte) -> None:
     # Projektion faellt dann in eine voellig andere Richtung, und das
     # Ergebnis war ein leeres Bild.
     bpy.context.view_layer.update()
+    graph = bpy.context.evaluated_depsgraph_get()
     hinein = kam.matrix_world.inverted()
     xs, ys = [], []
     for obj in objekte:
-        for ecke in obj.bound_box:
-            punkt = hinein @ (obj.matrix_world @ mathutils.Vector(ecke))
-            xs.append(punkt.x)
-            ys.append(punkt.y)
+        # Die echten Eckpunkte, nicht die Bounding-Box.
+        #
+        # Bei einem runden Teil projiziert sich die Kastendiagonale
+        # deutlich breiter als die Scheibe selbst -- das Zahnrad sass
+        # dadurch mit einem Drittel Luft im Bild. Und ausgewertet, damit
+        # die Fase mitzaehlt statt am Rand abgeschnitten zu werden.
+        fertig = obj.evaluated_get(graph)
+        netz = fertig.to_mesh()
+        try:
+            for punkt in netz.vertices:
+                lage = hinein @ (fertig.matrix_world @ punkt.co)
+                xs.append(lage.x)
+                ys.append(lage.y)
+        finally:
+            fertig.to_mesh_clear()
     kam.data.ortho_scale = max(max(xs) - min(xs), max(ys) - min(ys)) * 1.12
     kam.location = kam.matrix_world @ mathutils.Vector(
         ((max(xs) + min(xs)) / 2.0, (max(ys) + min(ys)) / 2.0, 0.0))
@@ -207,7 +219,7 @@ def kamera(weite):
     return kam
 
 
-def welt(helligkeit=0.25) -> None:
+def welt(helligkeit=0.45) -> None:
     w = bpy.data.worlds.new("Welt")
     w.use_nodes = True
     w.node_tree.nodes["Background"].inputs[0].default_value = (
@@ -272,12 +284,12 @@ def main() -> None:
     # Warmer Stahl mit einem Stich ins Messing -- unterscheidbar vom
     # kuehlen Aluminium, das Uni-Pulley bekommt. Die beiden Projekte
     # stehen in derselben Liste nebeneinander.
-    material(rad, (0.62, 0.52, 0.34, 1.0))
+    material(rad, (0.58, 0.53, 0.45, 1.0))
 
     # Dieselben drei Lampen wie bei Uni-Pulley, an denselben Stellen.
-    licht("Fuehrung", (1.3, -1.15, 1.6), 140.0, 2.7, weite)
-    licht("Aufhellung", (-1.4, -0.6, 0.6), 40.0, 3.5, weite)
-    licht("Kante", (-0.45, 1.4, 0.9), 65.0, 1.9, weite)
+    licht("Fuehrung", (1.3, -1.15, 1.6), 90.0, 2.7, weite)
+    licht("Aufhellung", (-1.4, -0.6, 0.6), 30.0, 3.5, weite)
+    licht("Kante", (-0.45, 1.4, 0.9), 45.0, 1.9, weite)
     welt()
     passe_ein(kamera(weite), [rad])
     rendere(AUSGABE)
