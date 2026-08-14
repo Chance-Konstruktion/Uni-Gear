@@ -162,6 +162,12 @@ def passe_ein(kam, objekte) -> None:
     man die Kamera in ihrer eigenen Ebene verschiebt -- das Nachzentrieren
     am Ende aendert den Ausschnitt also nicht, sondern nur die Lage.
     """
+    # Blender rechnet matrix_world erst beim naechsten Durchlauf des
+    # Abhaengigkeitsgraphen nach. Ohne diese Zeile steht hier noch die
+    # Matrix von vor dem Setzen von location und rotation -- die
+    # Projektion faellt dann in eine voellig andere Richtung, und das
+    # Ergebnis war ein leeres Bild.
+    bpy.context.view_layer.update()
     hinein = kam.matrix_world.inverted()
     xs, ys = [], []
     for obj in objekte:
@@ -210,6 +216,35 @@ def welt(helligkeit=0.25) -> None:
     bpy.context.scene.world = w
 
 
+def nicht_leer(ziel: pathlib.Path, mindestens=0.02) -> None:
+    """Nachsehen, ob ueberhaupt etwas im Bild steht.
+
+    Ein vollstaendig durchsichtiges PNG ist immer noch ein paar hundert
+    Kilobyte gross. Eine Pruefung auf "Datei existiert und ist nicht
+    leer" geht dabei durch -- der Job wird gruen, und das Icon ist ein
+    weisses Nichts. Genau das ist einmal passiert, als die Kamera falsch
+    ausgerichtet war.
+
+    Also wird der Alphakanal abgetastet: liegt der bedeckte Anteil unter
+    der Schwelle, ist das ein Fehler und kein Bild.
+    """
+    bild = bpy.data.images.load(str(ziel))
+    try:
+        pixel = bild.pixels[:]
+        # Jeden 97. Bildpunkt -- eine Primzahl, damit die Abtastung nicht
+        # mit dem Zeilenraster zusammenfaellt und ganze Spalten trifft.
+        alpha = pixel[3::4 * 97]
+        bedeckt = sum(1 for a in alpha if a > 0.1) / float(len(alpha))
+    finally:
+        bpy.data.images.remove(bild)
+    print("bedeckter Anteil: %.1f%%" % (bedeckt * 100.0))
+    if bedeckt < mindestens:
+        raise SystemExit(
+            "Das Bild ist so gut wie leer (%.2f%% bedeckt). Meist steht "
+            "die Kamera falsch oder der Ausschnitt ist daneben."
+            % (bedeckt * 100.0))
+
+
 def rendere(ziel: pathlib.Path) -> None:
     szene = bpy.context.scene
     szene.render.engine = "CYCLES"
@@ -246,6 +281,7 @@ def main() -> None:
     welt()
     passe_ein(kamera(weite), [rad])
     rendere(AUSGABE)
+    nicht_leer(AUSGABE)
     print("geschrieben: %s (Ausdehnung %.3f)" % (AUSGABE, weite))
 
 
