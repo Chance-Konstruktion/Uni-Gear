@@ -7,7 +7,7 @@
 Build realistic gears with just a few clicks right from the N-panel.
 Ideal for mechanical design, 3D printing, animation, technical visualization and game assets.
 
-![Gear Generator Screenshot](https://github.com/Chance-Konstruktion/Uni-Gear/blob/main/screenshot.png)
+![Gear Generator Screenshot](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/raw/main/screenshot.png)
 
 ## ✨ Features
 
@@ -32,7 +32,7 @@ Ideal for mechanical design, 3D printing, animation, technical visualization and
 
 ## 📥 Installation
 
-1. Download [`gear_generator.py`](https://github.com/Chance-Konstruktion/Uni-Gear/blob/main/gear_generator.py)
+1. Download [`gear_generator.py`](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/blob/main/gear_generator.py)
 2. In Blender: **Edit → Preferences → Add-ons → Install**
 3. Select the downloaded `.py` file
 4. Enable the add-on "Uni-Gear"

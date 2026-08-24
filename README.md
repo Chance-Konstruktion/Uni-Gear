@@ -7,7 +7,7 @@
 Erstelle realistische Zahnräder mit nur wenigen Klicks direkt im N-Panel.  
 Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisierungen und Game-Assets.
 
-![Zahnrad Generator Screenshot](https://github.com/Chance-Konstruktion/Uni-Gear/blob/main/screenshot.png)
+![Zahnrad Generator Screenshot](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/raw/main/screenshot.png)
 
 ## ✨ Features
 
@@ -32,7 +32,7 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 
 ## 📥 Installation
 
-1. Lade die Datei [`gear_generator.py`](https://github.com/Chance-Konstruktion/Uni-Gear/blob/main/gear_generator.py) herunter  
+1. Lade die Datei [`gear_generator.py`](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/blob/main/gear_generator.py) herunter  
 2. In Blender: **Edit → Preferences → Add-ons → Install**  
 3. Wähle die heruntergeladene `.py`-Datei aus  
 4. Aktiviere das Add-on „Uni-Gear"  
