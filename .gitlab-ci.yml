@@ -25,6 +25,27 @@ stages:
 variables:
   BLENDER_SERIE: "4.5"
 
+# Blender holen, ohne apt: Das laeuft im Container (nach dem apt-Schritt)
+# und auf dem GPU-Runner, der als Shell-Runner kein root hat und die
+# Bibliotheken schon mitbringt.
+.blender-holen:
+  script:
+    - |
+      if [ ! -x .blender-bin/blender ]; then
+        BASIS="https://download.blender.org/release/Blender${BLENDER_SERIE}/"
+        DATEI=$(curl -sSL "$BASIS" \
+          | grep -o "blender-${BLENDER_SERIE}\.[0-9]*-linux-x64\.tar\.xz" \
+          | sort -V | tail -1)
+        echo "Lade $DATEI"
+        curl -sSL -o blender.tar.xz "${BASIS}${DATEI}"
+        mkdir -p .blender-bin
+        tar -xf blender.tar.xz --strip-components=1 -C .blender-bin
+        rm -f blender.tar.xz
+      else
+        echo "Blender aus dem Cache"
+      fi
+    - .blender-bin/blender --version | head -2
+
 # Beide Jobs brauchen dasselbe Blender. Einmal beschrieben, zweimal
 # benutzt -- sonst laeuft die Fassung im Bildjob irgendwann auseinander,
 # und dann rendert etwas anderes als das, was geprueft wurde.
@@ -46,21 +67,7 @@ variables:
         libx11-6 libxi6 libxxf86vm1 libxfixes3 libxrender1 libxext6
         libxrandr2 libxinerama1 libxcursor1 libxkbcommon0
         libwayland-client0 libdbus-1-3 libfontconfig1 libfreetype6
-    - |
-      if [ ! -x .blender-bin/blender ]; then
-        BASIS="https://download.blender.org/release/Blender${BLENDER_SERIE}/"
-        DATEI=$(curl -sSL "$BASIS" \
-          | grep -o "blender-${BLENDER_SERIE}\.[0-9]*-linux-x64\.tar\.xz" \
-          | sort -V | tail -1)
-        echo "Lade $DATEI"
-        curl -sSL -o blender.tar.xz "${BASIS}${DATEI}"
-        mkdir -p .blender-bin
-        tar -xf blender.tar.xz --strip-components=1 -C .blender-bin
-        rm -f blender.tar.xz
-      else
-        echo "Blender aus dem Cache"
-      fi
-    - .blender-bin/blender --version | head -2
+    - !reference [.blender-holen, script]
 
 addon-laedt:
   extends: .mit-blender
@@ -115,6 +122,11 @@ addon-laedt:
 icon:
   extends: .mit-blender
   stage: bild
+  # Rendert auf der RTX 3060 (Runner 12, Shell). render_icon.py faellt von
+  # selbst auf die CPU zurueck, wenn ollama den Grafikspeicher belegt.
+  tags: [gpu]
+  before_script:
+    - !reference [.blender-holen, script]
   script:
     - export HOME="$CI_PROJECT_DIR/.blender-home"
     - mkdir -p "$HOME"

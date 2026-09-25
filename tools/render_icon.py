@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib.util
 import math
 import pathlib
+import subprocess
 import sys
 
 import bpy
@@ -306,10 +307,46 @@ def kleine_fassung(quelle: pathlib.Path, ziel: pathlib.Path) -> None:
             % (groesse / 1024.0, AVATAR_GRENZE // 1024))
 
 
+# Die Karte (RTX 3060, Runner 12) teilt sich ihren Speicher mit ollama. Ist zu
+# wenig frei oder gibt es gar keine Karte, rendert dasselbe Skript auf der CPU
+# weiter, statt abzubrechen. Das Bild ist in beiden Faellen dasselbe Motiv.
+GPU_MINDESTENS_MIB = 2048
+
+
+def gpu_speicher_frei() -> int:
+    try:
+        aus = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=20, check=True).stdout
+        return int(aus.split()[0])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return 0
+
+
+def geraet_waehlen(szene) -> str:
+    szene.cycles.device = "CPU"
+    frei = gpu_speicher_frei()
+    if frei < GPU_MINDESTENS_MIB:
+        print("Rendere auf der CPU (Grafikspeicher frei: %d MiB)." % frei)
+        return "CPU"
+    prefs = bpy.context.preferences.addons["cycles"].preferences
+    prefs.compute_device_type = "OPTIX"
+    prefs.get_devices()
+    karten = [d for d in prefs.devices if d.type == "OPTIX"]
+    if not karten:
+        print("Keine OptiX-Karte gefunden, rendere auf der CPU.")
+        return "CPU"
+    for d in prefs.devices:
+        d.use = d.type == "OPTIX"
+    szene.cycles.device = "GPU"
+    print("Rendere mit OptiX auf %s (Grafikspeicher frei: %d MiB)." % (karten[0].name, frei))
+    return karten[0].name
+
+
 def rendere(ziel: pathlib.Path) -> None:
     szene = bpy.context.scene
     szene.render.engine = "CYCLES"
-    szene.cycles.device = "CPU"
+    geraet_waehlen(szene)
     szene.cycles.samples = 160
     szene.cycles.use_denoising = True
     # Transparenter Hintergrund: das Icon steht bei GitLab auf hellem wie
