@@ -32,7 +32,7 @@ Ideal for mechanical design, 3D printing, animation, technical visualization and
 
 ## 📥 Installation
 
-1. Download the packaged add-on [`dist/uni_gear.zip`](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/blob/main/dist/uni_gear.zip)
+1. Download the packaged add-on [`dist/uni_gear.zip`](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/raw/main/dist/uni_gear.zip)
 2. In Blender: **Edit → Preferences → Add-ons → Install**
 3. Select the downloaded `.py` file
 4. Enable the add-on "Uni-Gear"
