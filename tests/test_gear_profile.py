@@ -1,6 +1,7 @@
 """Host-free regression tests for Uni-Gear's involute geometry."""
 
 import importlib.util
+import math
 import pathlib
 import sys
 import types
@@ -57,6 +58,29 @@ class TestGearProfileNormReferences(unittest.TestCase):
         self.assertAlmostEqual(tip_radius, 11.0, places=8)
         self.assertAlmostEqual(root_radius, 8.75, places=8)
 
+    def test_module_pitch_circle_and_20_degree_involute_reference(self):
+        pitch_radius = 10.0
+        teeth = 20
+        module = 2.0 * pitch_radius / teeth
+        _profile, root_radius, tip_radius = gear_math.build_gear_profile(
+            pitch_radius=pitch_radius,
+            teeth=teeth,
+            pressure_angle_deg=20.0,
+        )
+        # DIN 867 basic rack, zero profile shift: haP*=1.0, hfP*=1.25.
+        self.assertAlmostEqual(module, 1.0, places=8)
+        self.assertAlmostEqual(tip_radius - pitch_radius, module, places=8)
+        self.assertAlmostEqual(pitch_radius - root_radius, 1.25 * module, places=8)
+
+        alpha = math.radians(20.0)
+        base_radius = pitch_radius * math.cos(alpha)
+        self.assertAlmostEqual(base_radius, 9.396926207859085, places=8)
+        self.assertAlmostEqual(gear_math.inv(alpha), math.tan(alpha) - alpha, places=12)
+        self.assertAlmostEqual(
+            gear_math.involute_t_at_radius(base_radius, pitch_radius),
+            math.tan(alpha),
+            places=8,
+        )
     def test_invalid_profile_values_are_rejected(self):
         invalid_cases = (
             {"pitch_radius": 0.0, "teeth": 20, "pressure_angle_deg": 20.0},
