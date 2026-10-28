@@ -467,6 +467,8 @@ def create_gear_mesh(
     use_trochoidal=False,
     x_offset=0.0,
     phase_offset=0.0,
+    addendum_coeff=1.0,
+    dedendum_coeff=1.25,
 ):
     """Erstellt ein vollstaendiges 3D-Mesh eines Evolventen-Zahnrads.
 
@@ -502,6 +504,8 @@ def create_gear_mesh(
         pitch_radius=pitch_radius,
         teeth=teeth,
         pressure_angle_deg=pressure_angle_deg,
+        addendum_coeff=addendum_coeff,
+        dedendum_coeff=dedendum_coeff,
         profile_shift=profile_shift,
         use_trochoidal=use_trochoidal,
     )
@@ -766,6 +770,22 @@ def create_gear_mesh(
 # mehr noetig -> keine offenen Stirnflaechen, keine Ueberlappungen, keine
 # gefuellten Zahnluecken.
 
+def _internal_gear_cutter_profile_parameters(profile_shift=0.0):
+    """Profile coefficients for a solid cutter that generates an internal gear.
+
+    For the DIN 867 basic rack the cutter's addendum reaches the internal
+    gear's root circle (1.25 m), while its dedendum forms the internal tip
+    circle (1.0 m). The cutter's shift sign is opposite to the ring's shift.
+    """
+    if not math.isfinite(float(profile_shift)):
+        raise ValueError("Profilverschiebung muss eine endliche Zahl sein.")
+    return {
+        "addendum_coeff": 1.25,
+        "dedendum_coeff": 1.0,
+        "profile_shift": -profile_shift,
+    }
+
+
 def create_internal_gear_mesh(
     pitch_radius,
     teeth,
@@ -793,12 +813,24 @@ def create_internal_gear_mesh(
     if not math.isfinite(float(pressure_angle_deg)) or not 0.0 < pressure_angle_deg < 90.0:
         raise ValueError("Eingriffswinkel muss zwischen 0 und 90 Grad liegen.")
 
-    module          = 2.0 * pitch_radius / teeth
-    tool_tip_radius = pitch_radius + (1.0 + profile_shift) * module
-    if ring_outer_radius <= tool_tip_radius * 1.05:
+    _validate_gear_profile_inputs(
+        pitch_radius, teeth, pressure_angle_deg, 1.0, 1.25, profile_shift,
+        10, 3, 2, 2,
+    )
+    for label, value in (("Dicke", thickness), ("Ring-Aussenradius", ring_outer_radius)):
+        try:
+            finite_value = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{label} muss eine endliche Zahl sein.") from exc
+        if not math.isfinite(finite_value) or finite_value <= 0.0:
+            raise ValueError(f"{label} muss > 0 und endlich sein.")
+
+    module = 2.0 * pitch_radius / teeth
+    internal_root_radius = pitch_radius + (1.25 - profile_shift) * module
+    if ring_outer_radius <= internal_root_radius * 1.05:
         raise ValueError(
             f"Ring-Aussenradius ({ring_outer_radius*1000:.1f} mm) muss deutlich groesser "
-            f"als der Kopfkreis der Verzahnung ({tool_tip_radius*1000:.1f} mm) sein "
+            f"als der Zahnfusskreis der Innenverzahnung ({internal_root_radius*1000:.1f} mm) sein "
             f"(mind. 5% Wandstaerke).")
 
     # --- 1. Tool-Zahnrad (etwas laenger fuer sauberen Durchstoss) ---
@@ -810,9 +842,9 @@ def create_internal_gear_mesh(
         thickness=tool_thickness,
         pressure_angle_deg=pressure_angle_deg,
         helix_angle_deg=helix_angle_deg,
-        profile_shift=profile_shift,
         z_offset=z_offset - overhang,
         x_offset=x_offset,
+        **_internal_gear_cutter_profile_parameters(profile_shift),
     )
     tool.name = "HohlradTool"
     tool.select_set(False)  # create_gear_mesh selektiert -> fuer Boolean entsperren
