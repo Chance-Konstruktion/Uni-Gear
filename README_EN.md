@@ -140,6 +140,13 @@ The gear is created directly as a new object in the scene.
 
 ## Changelog
 
+### v1.0.4 – Blender-free geometry core and packaged installation
+
+- 🧮 **Pure math core**: involute, flank, root-fillet and internal/external profiles now live in `uni_gear/gear_math.py`; the module imports only `math` and is tested without `bpy`.
+- 📦 **Installable package**: install `dist/uni_gear.zip`; `python build_addon_zip.py` builds the archive and CI checks that it matches the source.
+- 🛡️ **Input validation**: profile functions reject invalid/non-finite dimensions, pressure angles, tooth counts and sampling values before mesh construction.
+- ⚙️ **Internal gears**: the Boolean cutter now uses complementary DIN 867 addendum/dedendum coefficients and the inverse profile-shift sign.
+- ✅ **Version and CI**: add-on metadata is v1.0.4; the declared Blender 3.0 minimum is documented and regression-tested.
 ### v1.0.2 – Final 1.0 (fine modules & unified bore defaults)
 
 - ➕ **Additional fine modules** in DIN-3960 mode: the module dropdown now
