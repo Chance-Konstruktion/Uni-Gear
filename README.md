@@ -2,7 +2,7 @@
 
 *In anderer Sprache lesen: **Deutsch** · [English](README_EN.md)*
 
-**Ein schlankes Blender-Add-on zur schnellen Erstellung parametrischer Zahnräder**
+**Ein schlankes Blender-Add-on (Blender 3.0+) zur schnellen Erstellung parametrischer Zahnräder**
 
 Erstelle realistische Zahnräder mit nur wenigen Klicks direkt im N-Panel.  
 Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisierungen und Game-Assets.
