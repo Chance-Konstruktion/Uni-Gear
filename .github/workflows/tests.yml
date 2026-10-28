@@ -14,3 +14,5 @@ jobs:
           python-version: "3.12"
       - name: Run host-free geometry regression tests
         run: python -m unittest discover -s tests -v
+      - name: Verify packaged add-on matches source
+        run: python build_addon_zip.py --check
