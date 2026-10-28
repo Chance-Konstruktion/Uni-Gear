@@ -2,7 +2,7 @@
 
 *Read this in another language: [Deutsch](README.md) · **English***
 
-**A lightweight Blender add-on for quickly creating parametric gears**
+**A lightweight Blender 3.0+ add-on for quickly creating parametric gears**
 
 Build realistic gears with just a few clicks right from the N-panel.
 Ideal for mechanical design, 3D printing, animation, technical visualization and game assets.
