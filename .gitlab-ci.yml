@@ -8,15 +8,10 @@ include:
 
 # CI fuer Uni-Gear.
 #
-# gear_generator.py importiert bpy auf Modulebene -- ausserhalb von Blender
-# laesst sich die Datei also nicht einmal importieren. Ein reiner
-# Syntax-Check waere deshalb das Einzige, was ohne Blender ginge, und der
-# faengt genau die Fehler nicht, die hier wehtun: ein falscher
-# Property-Typ, eine vergessene Registrierung, ein Klassenname, den Blender
-# ablehnt. Das merkt man sonst erst, wenn das Addon im Menue fehlt.
-#
-# Also laeuft hier echtes Blender headless: Addon installieren, aktivieren,
-# nachsehen ob der Operator da ist.
+# Die reine Evolventen-/Profilmathematik liegt in uni_gear/gear_math.py und
+# wird ohne Blender getestet. Dieser Smoke-Test prueft zusaetzlich das echte
+# Paket: Installation, Registrierung, Operatoren und Panels in Blender.
+
 
 stages:
   - test
@@ -82,7 +77,7 @@ addon-laedt:
       import addon_utils
       import bpy
 
-      MODUL = "gear_generator"
+      MODUL = "uni_gear"
 
       bpy.ops.preferences.addon_install(filepath=sys.argv[-1], overwrite=True)
       bpy.ops.preferences.addon_enable(module=MODUL)
@@ -114,7 +109,7 @@ addon-laedt:
       bpy.ops.preferences.addon_disable(module=MODUL)
       print("OK - laesst sich auch wieder deaktivieren")
       PY
-    - .blender-bin/blender --background --python pruefen.py -- "$CI_PROJECT_DIR/gear_generator.py"
+    - .blender-bin/blender --background --python pruefen.py -- "$CI_PROJECT_DIR/dist/uni_gear.zip"
 
 # Das Projektbild entsteht aus dem Add-on selbst -- gerendert wird, was
 # create_gear_mesh baut, nicht ein nachgestelltes Zahnrad. Damit ist das
