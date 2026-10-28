@@ -97,6 +97,7 @@ class TestGearProfileNormReferences(unittest.TestCase):
 
     def test_addon_version_is_updated(self):
         self.assertEqual(gear.bl_info["version"], (1, 0, 3))
+        self.assertEqual(gear.bl_info["blender"], (3, 0, 0))
 
 
 if __name__ == "__main__":
