@@ -32,7 +32,7 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 
 ## 📥 Installation
 
-1. Lade die Datei [`gear_generator.py`](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/blob/main/gear_generator.py) herunter  
+1. Lade das Add-on-Paket [`dist/uni_gear.zip`](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/blob/main/dist/uni_gear.zip) herunter  
 2. In Blender: **Edit → Preferences → Add-ons → Install**  
 3. Wähle die heruntergeladene `.py`-Datei aus  
 4. Aktiviere das Add-on „Uni-Gear"  
