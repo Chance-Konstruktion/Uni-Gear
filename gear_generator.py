@@ -6,7 +6,7 @@ import mathutils
 bl_info = {
     "name": "Uni-Gear",
     "author": "Du + KI-Assistent",
-    "version": (1, 0, 2),
+    "version": (1, 0, 3),
     "blender": (3, 0, 0),
     "location": "View3D > Sidebar > Uni-Gear",
     "description": "Parametrischer Zahnrad-Generator: Evolvente, Schraeg-/Kegel-/Innenverzahnung, DIN-3960, Paarung.",
@@ -21,6 +21,54 @@ bl_info = {
 def inv(alpha):
     """Klassische Evolventenfunktion inv(alpha) = tan(alpha) - alpha."""
     return math.tan(alpha) - alpha
+
+
+def _validate_gear_profile_inputs(
+    pitch_radius,
+    teeth,
+    pressure_angle_deg,
+    addendum_coeff,
+    dedendum_coeff,
+    profile_shift,
+    flank_samples,
+    fillet_samples,
+    tip_samples,
+    root_samples,
+):
+    """Reject invalid inputs before trigonometry or mesh construction."""
+    numeric_fields = {
+        "Teilkreisradius": pitch_radius,
+        "Eingriffswinkel": pressure_angle_deg,
+        "Kopfhoehenfaktor": addendum_coeff,
+        "Fusshoehenfaktor": dedendum_coeff,
+        "Profilverschiebung": profile_shift,
+    }
+    for label, value in numeric_fields.items():
+        try:
+            finite_value = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{label} muss eine endliche Zahl sein.") from exc
+        if not math.isfinite(finite_value):
+            raise ValueError(f"{label} muss eine endliche Zahl sein.")
+
+    if pitch_radius <= 0.0:
+        raise ValueError("Teilkreisradius muss > 0 sein.")
+    if not isinstance(teeth, int) or isinstance(teeth, bool) or teeth < 4:
+        raise ValueError("Zaehnezahl muss eine ganze Zahl >= 4 sein.")
+    if not 0.0 < pressure_angle_deg < 90.0:
+        raise ValueError("Eingriffswinkel muss zwischen 0 und 90 Grad liegen.")
+    if addendum_coeff <= 0.0 or dedendum_coeff <= 0.0:
+        raise ValueError("Kopf- und Fusshoehenfaktor muessen > 0 sein.")
+
+    sample_counts = {
+        "Flankensampling": (flank_samples, 1),
+        "Fillet-Sampling": (fillet_samples, 0),
+        "Kopfkreis-Sampling": (tip_samples, 0),
+        "Fusskreis-Sampling": (root_samples, 0),
+    }
+    for label, (count, minimum) in sample_counts.items():
+        if not isinstance(count, int) or isinstance(count, bool) or count < minimum:
+            raise ValueError(f"{label} muss eine ganze Zahl >= {minimum} sein.")
 
 
 def involute_xy(base_radius, t):
@@ -169,9 +217,10 @@ def build_gear_profile(
     profile_shift:  Profilverschiebungsfaktor x (DIN 3960). 0 = Nullrad.
     use_trochoidal: Trochoidaler Zahnfuss statt einfachem Kreisbogen-Fillet.
     """
-    if teeth < 4:
-        raise ValueError("Zaehnezahl muss >= 4 sein.")
-
+    _validate_gear_profile_inputs(
+        pitch_radius, teeth, pressure_angle_deg, addendum_coeff, dedendum_coeff,
+        profile_shift, flank_samples, fillet_samples, tip_samples, root_samples,
+    )
     pressure_angle = math.radians(pressure_angle_deg)
     module         = 2.0 * pitch_radius / teeth
     base_radius    = pitch_radius * math.cos(pressure_angle)
@@ -179,6 +228,8 @@ def build_gear_profile(
     x          = profile_shift
     tip_radius  = pitch_radius + (addendum_coeff + x) * module
     root_radius = max(pitch_radius - (dedendum_coeff - x) * module, 0.05 * pitch_radius)
+    if tip_radius <= base_radius or root_radius <= 0.0:
+        raise ValueError("Zahnprofil ist mit diesen Parametern nicht geometrisch gueltig.")
 
     angular_pitch    = 2.0 * math.pi / teeth
     half_tooth_at_pitch = (math.pi / 2.0 + 2.0 * x * math.tan(pressure_angle)) / teeth
@@ -244,16 +295,18 @@ def build_internal_gear_profile(
     Erzeugt das Innenprofil eines Hohlrads (Internal Gear / Ring Gear).
     Zaehne zeigen nach innen: Kopfkreis < Teilkreis < Fusskreis.
     """
-    if teeth < 4:
-        raise ValueError("Zaehnezahl muss >= 4 sein.")
+    _validate_gear_profile_inputs(
+        pitch_radius, teeth, pressure_angle_deg, addendum_coeff, dedendum_coeff,
+        profile_shift, flank_samples, fillet_samples, tip_samples, root_samples,
+    )
     pressure_angle = math.radians(pressure_angle_deg)
     module      = 2.0 * pitch_radius / teeth
     base_radius = pitch_radius * math.cos(pressure_angle)
     x           = profile_shift
     tip_radius  = pitch_radius - (addendum_coeff + x) * module
     root_radius = pitch_radius + (dedendum_coeff - x) * module
-    if tip_radius <= 0.0:
-        raise ValueError("Innenverzahnung: Teilkreisradius zu klein fuer diese Zaehnezahl.")
+    if tip_radius <= 0.0 or root_radius <= tip_radius:
+        raise ValueError("Innenverzahnung: Teilkreisradius/Profilverschiebung ergibt kein gueltiges Profil.")
 
     angular_pitch      = 2.0 * math.pi / teeth
     half_space_at_pitch = (math.pi / 2.0 - 2.0 * x * math.tan(pressure_angle)) / teeth
@@ -421,6 +474,30 @@ def create_gear_mesh(
     use_trochoidal: Trochoidaler Zahnfuss (DIN 3960).
     z_offset:       Verschiebung entlang Z (fuer Stacking).
     """
+    for label, value in {
+        "Dicke": thickness,
+        "Schraegungswinkel": helix_angle_deg,
+        "Bohrungsradius": bore_radius,
+        "Lochradius": hole_radius,
+        "Lochkreisradius": hole_pitch_radius,
+        "Nabenradius": hub_radius,
+        "Nabeninnenradius": hub_inner_radius,
+        "Nabenhoehe": hub_height,
+        "Z-Versatz": z_offset,
+        "X-Versatz": x_offset,
+        "Phasenversatz": phase_offset,
+    }.items():
+        try:
+            finite_value = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{label} muss eine endliche Zahl sein.") from exc
+        if not math.isfinite(finite_value):
+            raise ValueError(f"{label} muss eine endliche Zahl sein.")
+        if label == "Dicke" and finite_value <= 0.0:
+            raise ValueError(f"{label} muss > 0 sein.")
+        if label not in {"Dicke", "Schraegungswinkel", "Z-Versatz", "X-Versatz", "Phasenversatz"} and finite_value < 0.0:
+            raise ValueError(f"{label} darf nicht negativ sein.")
+
     profile_2d, root_radius, _tip_radius = build_gear_profile(
         pitch_radius=pitch_radius,
         teeth=teeth,
@@ -705,6 +782,17 @@ def create_internal_gear_mesh(
     ring_outer_radius: Aussenradius des Ringkoerpers (frei waehlbar, muss groesser
                        als der Kopfkreis des eingebetteten Werkzeug-Zahnrads sein).
     """
+    if not math.isfinite(float(pitch_radius)) or pitch_radius <= 0.0:
+        raise ValueError("Teilkreisradius muss > 0 und endlich sein.")
+    if not isinstance(teeth, int) or isinstance(teeth, bool) or teeth < 4:
+        raise ValueError("Zaehnezahl muss eine ganze Zahl >= 4 sein.")
+    if not math.isfinite(float(thickness)) or thickness <= 0.0:
+        raise ValueError("Dicke muss > 0 und endlich sein.")
+    if not math.isfinite(float(ring_outer_radius)) or ring_outer_radius <= 0.0:
+        raise ValueError("Ring-Aussenradius muss > 0 und endlich sein.")
+    if not math.isfinite(float(pressure_angle_deg)) or not 0.0 < pressure_angle_deg < 90.0:
+        raise ValueError("Eingriffswinkel muss zwischen 0 und 90 Grad liegen.")
+
     module          = 2.0 * pitch_radius / teeth
     tool_tip_radius = pitch_radius + (1.0 + profile_shift) * module
     if ring_outer_radius <= tool_tip_radius * 1.05:
@@ -843,10 +931,30 @@ def create_bevel_gear_mesh(
     bore_radius:         Optionale zentrale Bohrung durch den gesamten Kegel.
     z_offset:            Verschiebung entlang Z (z.B. fuer Kombinationen).
     """
-    if teeth < 4:
-        raise ValueError("Zaehnezahl muss >= 4 sein.")
-    if face_width <= 0.0:
-        raise ValueError("Zahnbreite muss > 0 sein.")
+    if not isinstance(teeth, int) or isinstance(teeth, bool) or teeth < 4:
+        raise ValueError("Zaehnezahl muss eine ganze Zahl >= 4 sein.")
+    for label, value in (
+        ("Teilkreisradius", pitch_radius),
+        ("Zahnbreite", face_width),
+        ("Eingriffswinkel", pressure_angle_deg),
+        ("Teilkegelwinkel", cone_angle_deg),
+        ("Spiralwinkel", spiral_angle_deg),
+        ("Bohrungsradius", bore_radius),
+    ):
+        try:
+            finite_value = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{label} muss eine endliche Zahl sein.") from exc
+        if not math.isfinite(finite_value):
+            raise ValueError(f"{label} muss eine endliche Zahl sein.")
+    if pitch_radius <= 0.0 or face_width <= 0.0:
+        raise ValueError("Teilkreisradius und Zahnbreite muessen > 0 sein.")
+    if bore_radius < 0.0:
+        raise ValueError("Bohrungsradius darf nicht negativ sein.")
+    if not 0.0 < pressure_angle_deg < 90.0:
+        raise ValueError("Eingriffswinkel muss zwischen 0 und 90 Grad liegen.")
+    if not 0.0 < cone_angle_deg < 90.0:
+        raise ValueError("Teilkegelwinkel muss zwischen 0 und 90 Grad liegen.")
 
     cone_angle   = math.radians(cone_angle_deg)
     spiral_angle = math.radians(spiral_angle_deg)
@@ -1154,7 +1262,7 @@ class GearGeneratorProperties(bpy.types.PropertyGroup):
         items=[
             ("0.2",  "m = 0,2",  ""), ("0.25", "m = 0,25", ""), ("0.3",  "m = 0,3",  ""),
             ("0.4",  "m = 0,4",  ""), ("0.5",  "m = 0,5",  ""), ("0.6",  "m = 0,6",  ""),
-            ("0.7",  "m = 0,7",  ""), ("0.8",  "m = 0,8",  ""), ("1.0",  "m = 1,0",  ""),
+            ("0.7",  "m = 0,7",  ""), ("0.8",  "m = 0,8",  ""), ("0.9",  "m = 0,9",  ""), ("1.0",  "m = 1,0",  ""),
             ("1.25", "m = 1,25", ""), ("1.5",  "m = 1,5",  ""), ("2.0",  "m = 2,0",  ""),
             ("2.5",  "m = 2,5",  ""), ("3.0",  "m = 3,0",  ""), ("4.0",  "m = 4,0",  ""),
             ("5.0",  "m = 5,0",  ""), ("6.0",  "m = 6,0",  ""), ("8.0",  "m = 8,0",  ""),
