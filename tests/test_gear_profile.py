@@ -74,6 +74,21 @@ class TestGearProfileNormReferences(unittest.TestCase):
                 pressure_angle_deg=20.0,
             )
 
+    def test_internal_gear_radii_follow_din_867_basic_profile(self):
+        _profile, root_radius, tip_radius = gear.build_internal_gear_profile(
+            pitch_radius=10.0,
+            teeth=20,
+            pressure_angle_deg=20.0,
+        )
+        self.assertAlmostEqual(root_radius, 11.25, places=8)
+        self.assertAlmostEqual(tip_radius, 9.0, places=8)
+
+    def test_internal_gear_uses_inverted_cutter_coefficients(self):
+        cutter = gear._internal_gear_cutter_profile_parameters(profile_shift=0.2)
+        self.assertEqual(cutter["addendum_coeff"], 1.25)
+        self.assertEqual(cutter["dedendum_coeff"], 1.0)
+        self.assertEqual(cutter["profile_shift"], -0.2)
+
     def test_din_780_module_dropdown_includes_09(self):
         module_property = gear.GearGeneratorProperties.__annotations__["din_module"]
         values = {entry[0] for entry in module_property["items"]}
