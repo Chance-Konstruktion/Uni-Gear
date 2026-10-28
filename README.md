@@ -140,6 +140,12 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 ## Changelog
 
+### v1.0.3 – Geometrievalidierung und Innenverzahnung
+
+- 🛡️ **Eingabevalidierung**: Die hostfreien Profilfunktionen weisen ungültige oder nicht endliche Maße, Eingriffswinkel, Zähnezahlen und Samplingwerte vor der Mesh-Erzeugung zurück.
+- ⚙️ **Innenverzahnung**: Der Boolean-Cutter verwendet nun die komplementären DIN-867-Zahnkopfhöhen/-fußhöhen und das entgegengesetzte Vorzeichen der Profilverschiebung.
+- 🧪 **Regressionstests**: Die DIN-867-Grundmaße werden ohne Blender getestet; `m = 0,9` bleibt als bevorzugtes DIN-780-Modul im bestehenden Dropdown abgedeckt.
+- ✅ **CI**: Hostfreie Regressionstests laufen bei Pushes und Pull Requests automatisch.
 ### v1.0.2 – Finale 1.0 (Feinmodule & einheitliche Bohrungs-Defaults)
 
 - ➕ **Zusätzliche Feinmodule** im DIN-3960-Modus: das Modul-Dropdown
