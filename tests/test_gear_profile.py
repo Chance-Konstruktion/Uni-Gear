@@ -32,17 +32,23 @@ def _install_blender_stubs():
     sys.modules["mathutils"] = types.ModuleType("mathutils")
 
 
+# Load the production math source directly by path. This bypasses package
+# initialization so the calculation tests do not import bpy.
+math_spec = importlib.util.spec_from_file_location(
+    "uni_gear_pure_math", ROOT / "uni_gear" / "gear_math.py"
+)
+gear_math = importlib.util.module_from_spec(math_spec)
+math_spec.loader.exec_module(gear_math)
+
 _install_blender_stubs()
 sys.path.insert(0, str(ROOT))
-spec = importlib.util.spec_from_file_location("uni_gear_test_module", ROOT / "gear_generator.py")
-gear = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(gear)
+import uni_gear as gear  # noqa: E402
 
 
 class TestGearProfileNormReferences(unittest.TestCase):
     def test_standard_straight_gear_radii_follow_din_867_basic_profile(self):
         # DIN 867 basic rack: haP*=1.0 and hfP*=1.25, module m=2*r/z.
-        profile, root_radius, tip_radius = gear.build_gear_profile(
+        profile, root_radius, tip_radius = gear_math.build_gear_profile(
             pitch_radius=10.0,
             teeth=20,
             pressure_angle_deg=20.0,
@@ -75,7 +81,7 @@ class TestGearProfileNormReferences(unittest.TestCase):
             )
 
     def test_internal_gear_radii_follow_din_867_basic_profile(self):
-        _profile, root_radius, tip_radius = gear.build_internal_gear_profile(
+        _profile, root_radius, tip_radius = gear_math.build_internal_gear_profile(
             pitch_radius=10.0,
             teeth=20,
             pressure_angle_deg=20.0,
@@ -96,7 +102,7 @@ class TestGearProfileNormReferences(unittest.TestCase):
         self.assertIn("1.25", values)
 
     def test_addon_version_is_updated(self):
-        self.assertEqual(gear.bl_info["version"], (1, 0, 3))
+        self.assertEqual(gear.bl_info["version"], (1, 0, 4))
         self.assertEqual(gear.bl_info["blender"], (3, 0, 0))
 
 
