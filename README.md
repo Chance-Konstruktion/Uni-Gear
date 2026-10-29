@@ -2,7 +2,7 @@
 
 *In anderer Sprache lesen: **Deutsch** · [English](README_EN.md)*
 
-**Ein schlankes Blender-Add-on zur schnellen Erstellung parametrischer Zahnräder**
+**Ein schlankes Blender-Add-on (Blender 3.0+) zur schnellen Erstellung parametrischer Zahnräder**
 
 Erstelle realistische Zahnräder mit nur wenigen Klicks direkt im N-Panel.  
 Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisierungen und Game-Assets.
@@ -32,7 +32,7 @@ Ideal für Mechanik-Konstruktionen, 3D-Druck, Animationen, technische Visualisie
 
 ## 📥 Installation
 
-1. Lade die Datei [`gear_generator.py`](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/blob/main/gear_generator.py) herunter  
+1. Lade das Add-on-Paket [`dist/uni_gear.zip`](https://gitlab.schanz.ipv64.net/chance-konstruktion/uni-gear/-/raw/main/dist/uni_gear.zip) herunter  
 2. In Blender: **Edit → Preferences → Add-ons → Install**  
 3. Wähle die heruntergeladene `.py`-Datei aus  
 4. Aktiviere das Add-on „Uni-Gear"  
@@ -140,6 +140,12 @@ Das Zahnrad wird direkt als neues Objekt in der Szene erstellt.
 
 ## Changelog
 
+### v1.0.3 – Geometrievalidierung und Innenverzahnung
+
+- 🛡️ **Eingabevalidierung**: Die hostfreien Profilfunktionen weisen ungültige oder nicht endliche Maße, Eingriffswinkel, Zähnezahlen und Samplingwerte vor der Mesh-Erzeugung zurück.
+- ⚙️ **Innenverzahnung**: Der Boolean-Cutter verwendet nun die komplementären DIN-867-Zahnkopfhöhen/-fußhöhen und das entgegengesetzte Vorzeichen der Profilverschiebung.
+- 🧪 **Regressionstests**: Die DIN-867-Grundmaße werden ohne Blender getestet; `m = 0,9` bleibt als bevorzugtes DIN-780-Modul im bestehenden Dropdown abgedeckt.
+- ✅ **CI**: Hostfreie Regressionstests laufen bei Pushes und Pull Requests automatisch.
 ### v1.0.2 – Finale 1.0 (Feinmodule & einheitliche Bohrungs-Defaults)
 
 - ➕ **Zusätzliche Feinmodule** im DIN-3960-Modus: das Modul-Dropdown
