@@ -34,19 +34,16 @@ def leere_szene() -> None:
 
 
 def lade_addon():
-    """``gear_generator.py`` laden, ohne es zu installieren.
+    """Das Paket ``uni_gear`` aus dem Repo laden, ohne es zu installieren.
 
-    Das Add-on ruft beim Import kein ``register()`` auf, deshalb genuegt
-    ein gewoehnlicher Modul-Import -- und wir bekommen die Bau-Funktion
-    direkt, ohne den Umweg ueber einen Operator, der einen UI-Kontext
-    braeuchte.
+    ``gear_generator.py`` ist seit dem Umbau auf das Paket nur noch ein
+    Verweis auf das installierte Add-on. Das Paket selbst liegt aber im
+    Repo, also genuegt es, die Wurzel in den Suchpfad zu legen. Beim
+    Import laeuft kein ``register()`` -- wir bekommen die Bau-Funktion
+    direkt, ohne den Umweg ueber einen Operator mit UI-Kontext.
     """
-    pfad = WURZEL / "gear_generator.py"
-    spec = importlib.util.spec_from_file_location("gear_generator", pfad)
-    modul = importlib.util.module_from_spec(spec)
-    sys.modules["gear_generator"] = modul
-    spec.loader.exec_module(modul)
-    return modul
+    sys.path.insert(0, str(WURZEL))
+    return importlib.import_module("uni_gear")
 
 
 def baue_zahnrad(modul):
